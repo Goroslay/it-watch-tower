@@ -1,0 +1,22 @@
+{
+  "name": "@itwatchtower/shared",
+  "version": "0.0.1",
+  "description": "Shared types, interfaces, and utilities for IT Watch Tower services",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./types": "./dist/types/index.js",
+    "./utils": "./dist/utils/helpers.js"
+  }
+}

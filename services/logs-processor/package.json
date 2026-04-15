@@ -1,0 +1,23 @@
+{
+  "name": "logs-processor",
+  "version": "0.0.1",
+  "description": "Processes logs from NATS and writes to ClickHouse",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "nats": "^2.18.0",
+    "axios": "^1.6.0",
+    "@itwatchtower/shared": "*",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.0.0"
+  }
+}
