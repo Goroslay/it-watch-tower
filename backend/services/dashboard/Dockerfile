@@ -1,17 +1,18 @@
+
 FROM node:20-alpine
 
-WORKDIR /app
-
+WORKDIR /shared
 RUN apk add --no-cache python3 make g++
+COPY ../../shared/package*.json ./
+COPY ../../shared/tsconfig.json ./
+COPY ../../shared/src ./src
+RUN npm install && npm run build
 
+WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
-
-RUN npm install
-
 COPY src ./src
-
-RUN npm run build
+RUN npm install && npm run build
 
 EXPOSE 3004
 

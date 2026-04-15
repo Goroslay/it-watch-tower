@@ -5,18 +5,22 @@ WORKDIR /app
 # Install build tools
 RUN apk add --no-cache python3 make g++
 
-# Copy package files
+
+# Build shared package first
+WORKDIR /shared
+COPY ../../shared/package*.json ./
+COPY ../../shared/tsconfig.json ./
+COPY ../../shared/src ./src
+RUN npm install && npm run build
+
+# Back to service context
+WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
-
-# Install dependencies
-RUN npm install
-
-# Copy source code
 COPY src ./src
 
-# Build
-RUN npm run build
+# Install dependencies and build
+RUN npm install && npm run build
 
 # Expose port (if needed)
 EXPOSE 3000
