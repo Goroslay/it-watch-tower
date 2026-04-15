@@ -28,8 +28,6 @@ export class NatsConsumer {
         servers: [this.natsUrl],
         user: this.natsUser,
         pass: this.natsPassword,
-        reconnectDelayMs: 5000,
-        maxReconnectAttempts: 10,
       });
 
       this.logger.info('Connected to NATS', {

@@ -1,11 +1,10 @@
 {
-  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
     "baseUrl": ".",
     "paths": {
-      "@itwatchtower/shared": ["../../packages/shared/src"]
+      "@itwatchtower/shared": ["../../shared/metrics"]
     }
   },
   "include": ["src"],
