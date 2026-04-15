@@ -484,3 +484,39 @@ For issues, questions, or suggestions:
 ---
 
 **Made with ❤️ for enterprise monitoring**
+
+## 🐳 Docker & Deployment
+
+### Unified Docker Compose
+
+All services (backend microservices, frontend, databases, and infrastructure) are orchestrated via a single root-level `docker-compose.yml`.
+
+- Each microservice and the frontend has its own `Dockerfile` for independent builds.
+- The database (ClickHouse) uses a custom `Dockerfile` for schema initialization.
+- Infrastructure services (NATS, VictoriaMetrics) use official images.
+
+**To build and run everything:**
+```bash
+docker-compose up --build -d
+```
+
+**To stop all containers:**
+```bash
+docker-compose down
+```
+
+### Service Overview
+
+| Service              | Docker Context                        | Dockerfile Path                                   |
+|--------------------- |--------------------------------------|--------------------------------------------------|
+| metrics-processor    | backend/services/metrics-processor    | backend/services/metrics-processor/Dockerfile     |
+| logs-processor       | backend/services/logs-processor       | backend/services/logs-processor/Dockerfile        |
+| alert-engine         | backend/services/alert-engine         | backend/services/alert-engine/Dockerfile          |
+| backend-api          | backend/services/backend-api          | backend/services/backend-api/Dockerfile           |
+| dashboard            | backend/services/dashboard            | backend/services/dashboard/Dockerfile             |
+| itwatchtower-agent   | backend/services/itwatchtower-agent   | backend/services/itwatchtower-agent/Dockerfile    |
+| frontend             | frontend                              | frontend/Dockerfile                               |
+| clickhouse           | database                              | database/Dockerfile                               |
+| nats, victoria-metrics | infrastructure (official images)    | N/A                                              |
+
+> **Note:** The previous `backend/docker-compose.yml` is now removed. Use only the root `docker-compose.yml` for orchestration.

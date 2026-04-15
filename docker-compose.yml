@@ -47,15 +47,17 @@ services:
       retries: 5
 
   # ClickHouse for structured logs
+
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    build:
+      context: ./database
+      dockerfile: Dockerfile
     container_name: itwatchtower-clickhouse
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./database/schemas/001-init-tables.sql:/docker-entrypoint-initdb.d/init-db.sql
     environment:
       - CLICKHOUSE_DB=itwatchtower
       - CLICKHOUSE_USER=default
@@ -67,6 +69,129 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  metrics-processor:
+    build:
+      context: ./backend/services/metrics-processor
+      dockerfile: Dockerfile
+    container_name: metrics-processor
+    depends_on:
+      - nats
+      - victoria-metrics
+    networks:
+      - itwatchtower
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  logs-processor:
+    build:
+      context: ./backend/services/logs-processor
+      dockerfile: Dockerfile
+    container_name: logs-processor
+    depends_on:
+      - nats
+      - clickhouse
+    networks:
+      - itwatchtower
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  alert-engine:
+    build:
+      context: ./backend/services/alert-engine
+      dockerfile: Dockerfile
+    container_name: alert-engine
+    depends_on:
+      - nats
+      - clickhouse
+    networks:
+      - itwatchtower
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  backend-api:
+    build:
+      context: ./backend/services/backend-api
+      dockerfile: Dockerfile
+    container_name: backend-api
+    depends_on:
+      - nats
+      - clickhouse
+    networks:
+      - itwatchtower
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dashboard:
+    build:
+      context: ./backend/services/dashboard
+      dockerfile: Dockerfile
+    container_name: dashboard
+    depends_on:
+      - backend-api
+    networks:
+      - itwatchtower
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  itwatchtower-agent:
+    build:
+      context: ./backend/services/itwatchtower-agent
+      dockerfile: Dockerfile
+    container_name: itwatchtower-agent
+    depends_on:
+      - nats
+    networks:
+      - itwatchtower
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    depends_on:
+      - backend-api
+    ports:
+      - "3000:3000"
+    networks:
+      - itwatchtower
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   nats_data:
