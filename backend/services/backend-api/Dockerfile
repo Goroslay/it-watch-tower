@@ -3,15 +3,15 @@ FROM node:20-alpine
 
 WORKDIR /shared
 RUN apk add --no-cache python3 make g++
-COPY ../../shared/package*.json ./
-COPY ../../shared/tsconfig.json ./
-COPY ../../shared/src ./src
+COPY backend/shared/package*.json ./
+COPY backend/shared/tsconfig.json ./
+COPY backend/shared/src ./src
 RUN npm install && npm run build
 
 WORKDIR /app
-COPY package*.json ./
-COPY tsconfig.json ./
-COPY src ./src
+COPY backend/services/backend-api/package*.json ./
+COPY backend/services/backend-api/tsconfig.json ./
+COPY backend/services/backend-api/src ./src
 RUN npm install && npm run build
 
 EXPOSE 3003

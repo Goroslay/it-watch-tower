@@ -6,18 +6,19 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 
+
 # Build shared package first
 WORKDIR /shared
-COPY ../../shared/package*.json ./
-COPY ../../shared/tsconfig.json ./
-COPY ../../shared/src ./src
+COPY backend/shared/package*.json ./
+COPY backend/shared/tsconfig.json ./
+COPY backend/shared/src ./src
 RUN npm install && npm run build
 
 # Back to service context
 WORKDIR /app
-COPY package*.json ./
-COPY tsconfig.json ./
-COPY src ./src
+COPY backend/services/metrics-processor/package*.json ./
+COPY backend/services/metrics-processor/tsconfig.json ./
+COPY backend/services/metrics-processor/src ./src
 
 # Install dependencies and build
 RUN npm install && npm run build

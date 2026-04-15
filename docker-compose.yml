@@ -72,8 +72,8 @@ services:
 
   metrics-processor:
     build:
-      context: ./backend/services/metrics-processor
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/services/metrics-processor/Dockerfile
     container_name: metrics-processor
     depends_on:
       - nats
@@ -90,8 +90,8 @@ services:
 
   logs-processor:
     build:
-      context: ./backend/services/logs-processor
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/services/logs-processor/Dockerfile
     container_name: logs-processor
     depends_on:
       - nats
@@ -108,8 +108,8 @@ services:
 
   alert-engine:
     build:
-      context: ./backend/services/alert-engine
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/services/alert-engine/Dockerfile
     container_name: alert-engine
     depends_on:
       - nats
@@ -126,8 +126,8 @@ services:
 
   backend-api:
     build:
-      context: ./backend/services/backend-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/services/backend-api/Dockerfile
     container_name: backend-api
     depends_on:
       - nats
@@ -144,8 +144,8 @@ services:
 
   dashboard:
     build:
-      context: ./backend/services/dashboard
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/services/dashboard/Dockerfile
     container_name: dashboard
     depends_on:
       - backend-api

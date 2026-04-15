@@ -5,15 +5,15 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /shared
-COPY ../../shared/package*.json ./
-COPY ../../shared/tsconfig.json ./
-COPY ../../shared/src ./src
+COPY backend/shared/package*.json ./
+COPY backend/shared/tsconfig.json ./
+COPY backend/shared/src ./src
 RUN npm install && npm run build
 
 WORKDIR /app
-COPY package*.json ./
-COPY tsconfig.json ./
-COPY src ./src
+COPY backend/services/logs-processor/package*.json ./
+COPY backend/services/logs-processor/tsconfig.json ./
+COPY backend/services/logs-processor/src ./src
 
 RUN npm install && npm run build
 
