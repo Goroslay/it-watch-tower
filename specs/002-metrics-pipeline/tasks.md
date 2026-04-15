@@ -1,0 +1,4 @@
+- implement metrics consumer
+- validate metrics schema
+- enrich metric tags
+- write metrics to storage

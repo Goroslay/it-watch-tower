@@ -1,0 +1,4 @@
+- implement hosts endpoint
+- implement metrics queries
+- implement logs search
+- implement alerts API

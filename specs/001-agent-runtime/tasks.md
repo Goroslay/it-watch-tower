@@ -1,0 +1,4 @@
+- implement metrics collector
+- implement log collector
+- implement service detection
+- implement remote executor

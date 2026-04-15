@@ -1,0 +1,4 @@
+- define system architecture
+- define messaging model
+- define storage architecture
+- define scaling strategy

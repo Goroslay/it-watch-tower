@@ -1,0 +1,3 @@
+- implement command dispatcher
+- implement command whitelist
+- implement execution response

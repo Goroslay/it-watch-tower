@@ -1,0 +1,3 @@
+- implement rule evaluator
+- implement alert state machine
+- implement notification triggers

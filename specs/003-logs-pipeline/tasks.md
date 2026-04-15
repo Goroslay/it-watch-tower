@@ -1,0 +1,4 @@
+- implement logs consumer
+- parse logs
+- normalize log structure
+- write logs to ClickHouse
