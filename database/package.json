@@ -1,0 +1,11 @@
+{
+  "name": "it-watch-tower-database",
+  "version": "0.0.1",
+  "description": "Database schemas and migrations",
+  "private": true,
+  "scripts": {
+    "migrate": "echo 'Run migrations manually or via Docker entrypoint'",
+    "migrate:up": "clickhouse-client --host localhost --database itwatchtower < schemas/001-init-tables.sql",
+    "reset": "echo 'Reset database - requires manual confirmation'"
+  }
+}

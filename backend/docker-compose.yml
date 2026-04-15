@@ -15,7 +15,7 @@ services:
       -c /etc/nats/nats.conf
       -m 8222
     volumes:
-      - ./infrastructure/nats/nats.conf:/etc/nats/nats.conf
+      - ../infrastructure/nats/nats.conf:/etc/nats/nats.conf
       - nats_data:/data/nats
     networks:
       - itwatchtower
@@ -55,7 +55,7 @@ services:
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./database/schemas/001-init-tables.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - ../infrastructure/clickhouse/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     environment:
       - CLICKHOUSE_DB=itwatchtower
       - CLICKHOUSE_USER=default

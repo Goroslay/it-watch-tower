@@ -3,30 +3,31 @@
   "version": "0.0.1",
   "description": "Enterprise monitoring platform for hybrid infrastructures",
   "private": true,
-  "workspaces": [
-    "packages/*",
-    "services/*"
-  ],
   "scripts": {
-    "install-all": "npm install",
-    "dev": "npm run dev --workspaces",
-    "build": "npm run build --workspaces",
+    "install-all": "npm install --workspaces && npm install",
+    "dev": "npm run dev --workspace=backend & npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
     "test": "npm run test --workspaces",
-    "lint": "npm run lint --workspaces",
-    "format": "prettier --write \"**/*.{ts,js,json,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
-    "clean": "find . -type d -name node_modules -prune -exec rm -rf {} + && find . -type d -name dist -prune -exec rm -rf {} + && find . -type d -name build -prune -exec rm -rf {} +",
-    "docker:build": "docker-compose build",
-    "docker:up": "docker-compose up -d",
-    "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f"
+    "lint": "npm run lint --workspace=backend && npm run lint --workspace=frontend",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
+    "clean": "find . -type d -name node_modules -prune -exec rm -rf {} + && find . -type d -name dist -prune -exec rm -rf {} + && find . -type d -name build -prune -exec rm -rf {} + && find . -type d -name .next -prune -exec rm -rf {} +",
+    "backend:docker:up": "cd backend && docker-compose up -d",
+    "backend:docker:down": "cd backend && docker-compose down",
+    "backend:docker:logs": "cd backend && docker-compose logs -f"
   },
+  "workspaces": [
+    "backend",
+    "frontend",
+    "database"
+  ],
   "devDependencies": {
     "@types/node": "^20.0.0",
     "prettier": "^3.0.0",
-    "eslint": "^8.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
     "typescript": "^5.0.0"
   }
 }

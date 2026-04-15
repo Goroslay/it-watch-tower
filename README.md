@@ -73,24 +73,64 @@ IT Watch Tower is a comprehensive monitoring solution designed for enterprise en
 
 ```
 it-watch-tower/
-├── services/                    # Microservices
-│   ├── itwatchtower-agent/     # Go agent (metrics, logs, commands)
-│   ├── metrics-processor/      # Node.js - NATS → VictoriaMetrics
-│   ├── logs-processor/         # Node.js - NATS → ClickHouse
-│   ├── alert-engine/           # Node.js - Rule evaluation & notifications
-│   ├── backend-api/            # Node.js - REST API
-│   └── dashboard/              # React - Web UI
-├── packages/
-│   └── shared/                 # Shared types, interfaces, utilities
+├── backend/                        # Backend microservices & shared
+│   ├── services/                   
+│   │   ├── itwatchtower-agent/    # Go agent (metrics, logs, commands)
+│   │   ├── metrics-processor/     # Node.js - NATS → VictoriaMetrics
+│   │   ├── logs-processor/        # Node.js - NATS → ClickHouse
+│   │   ├── alert-engine/          # Node.js - Rule evaluation & notifications
+│   │   └── backend-api/           # Node.js - REST API (deprecated)
+│   ├── shared/                     # Shared types, interfaces, utilities
+│   ├── docker-compose.yml          # Backend infrastructure (NATS, DBs)
+│   ├── package.json                # Backend workspace
+│   └── README.md
+├── frontend/                       # Next.js Dashboard + API Routes
+│   ├── app/
+│   │   ├── dashboard/              # Main dashboard page
+│   │   ├── api/                    # API routes (proxy to backend)
+│   │   └── layout.tsx              # Root layout
+│   ├── components/                 # Reusable components
+│   ├── lib/                        # Utilities and API helpers
+│   ├── next.config.js
+│   ├── tsconfig.json
+│   ├── package.json
+│   └── README.md
+├── database/                       # Database schemas & migrations
+│   ├── schemas/
+│   │   └── 001-init-tables.sql    # ClickHouse schema
+│   ├── migrations/                 # Future migration scripts
+│   ├── package.json
+│   └── README.md
 ├── infrastructure/
-│   ├── nats/                   # NATS configuration
-│   └── clickhouse/             # ClickHouse initialization
-├── scripts/                    # Development scripts
-├── docs/                       # Documentation (PRD, TDD)
-├── specs/                      # Technical specifications
-├── docker-compose.yml          # Local development stack
-├── Makefile                    # Build & run targets
-└── package.json                # Monorepo root
+│   ├── nats/                       # NATS configuration
+│   └── clickhouse/                 # ClickHouse init (deprecated)
+├── scripts/                        # Development scripts
+├── docs/                           # Documentation (PRD, TDD)
+├── specs/                          # Technical specifications
+├── docker-compose.yml              # Root-level compose (all services)
+├── .env.example                    # Environment template
+├── Makefile                        # Build & run targets
+├── package.json                    # Root workspace
+└── README.md
+```
+
+### Directory Explanation
+
+**backend/** - Microservices architecture
+- Each service (metrics, logs, alerts) is independent and scalable
+- Shared types in `backend/shared` ensure consistency
+- Docker Compose for infrastructure services (NATS, VictoriaMetrics, ClickHouse)
+
+**frontend/** - Next.js SPA + API Routes
+- Modern React dashboard with Vite-equivalent performance
+- API routes at `/app/api/*` proxy to backend services
+- Real-time updates with WebSockets support
+- Server-side rendering for better SEO and performance
+
+**database/** - Schema management
+- ClickHouse schemas with migrations
+- TTL policies for data retention
+- Indexed for query performance
 
 ## 🚀 Quick Start
 
@@ -109,38 +149,39 @@ git clone https://github.com/Goroslay/it-watch-tower.git
 cd it-watch-tower
 ```
 
-2. **Run setup script**
+2. **Full setup**
 ```bash
-chmod +x scripts/setup.sh
-./scripts/setup.sh
+make setup-local
 ```
 
-This will:
-- Create `.env` configuration file
-- Install all dependencies
-- Start Docker services (NATS, VictoriaMetrics, ClickHouse)
-- Verify service health
-
-3. **Start services**
+Or manual:
 ```bash
-npm run dev
+cp .env.example .env
+npm run install-all
+docker-compose up -d
 ```
 
-Or with make:
+3. **Start development**
 ```bash
 make dev
+```
+
+Or separately:
+```bash
+make dev:backend  # Terminal 1
+make dev:frontend # Terminal 2
 ```
 
 ### Accessing Services
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| Dashboard | http://localhost:5173 | React UI (dev) |
-| Backend API | http://localhost:3000 | REST API |
-| NATS | nats://localhost:4222 | Message broker |
-| NATS Admin | http://localhost:8222 | NATS monitoring |
-| VictoriaMetrics | http://localhost:8428 | Metrics database |
-| ClickHouse | http://localhost:8123 | Logs database |
+| Dashboard | http://localhost:3000 | Next.js UI |
+| Frontend API | http://localhost:3000/api | API routes proxy |
+| Backend Services | Various | NATS-based microservices |
+| NATS Admin | http://localhost:8222 | Message broker monitoring |
+| VictoriaMetrics | http://localhost:8428 | Metrics storage & queries |
+| ClickHouse | http://localhost:8123 | Logs storage & queries |
 
 ## 🔧 Development
 
@@ -152,12 +193,19 @@ npm run build
 make build
 ```
 
+### Build Specific Parts
+
+```bash
+make build:backend  # Build backend services
+make build:frontend # Build frontend
+```
+
 ### Development Mode
 
 ```bash
-npm run dev
-# or
-make dev
+make dev           # Start backend & frontend
+make dev:backend   # Backend only
+make dev:frontend  # Frontend only
 ```
 
 ### Run Tests
@@ -179,13 +227,12 @@ npm run format      # Format code
 npm run format:check # Check formatting
 ```
 
-### Docker
+### Docker Infrastructure
 
 ```bash
-make docker-build   # Build Docker images
-make docker-up      # Start containers
-make docker-down    # Stop containers
-make docker-logs    # View logs
+make docker:up      # Start NATS, VictoriaMetrics, ClickHouse
+make docker:down    # Stop containers
+make docker:logs    # View logs
 ```
 
 ## 📚 Services Documentation
