@@ -159,20 +159,6 @@ services:
       timeout: 10s
       retries: 3
 
-  itwatchtower-agent:
-    build:
-      context: ./backend/services/itwatchtower-agent
-      dockerfile: Dockerfile
-    container_name: itwatchtower-agent
-    depends_on:
-      - nats
-    networks:
-      - itwatchtower
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   frontend:
     build:
