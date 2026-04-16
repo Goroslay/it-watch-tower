@@ -22,6 +22,13 @@ interface AppConfig {
     batchSize: number;
     flushIntervalMs: number;
   };
+  processing: {
+    metricsSubject: string;
+    deadLetterSubject: string;
+    maxUniqueSeries: number;
+    maxTagKeys: number;
+    maxTagValueLength: number;
+  };
 }
 
 const config: AppConfig = {
@@ -41,8 +48,15 @@ const config: AppConfig = {
   victoriaMetrics: {
     url: process.env.VICTORIA_METRICS_URL || 'http://localhost:8428',
     timeout: 10000,
-    batchSize: 100,
-    flushIntervalMs: 5000,
+    batchSize: Number(process.env.VICTORIA_METRICS_BATCH_SIZE || 100),
+    flushIntervalMs: Number(process.env.VICTORIA_METRICS_FLUSH_INTERVAL_MS || 5000),
+  },
+  processing: {
+    metricsSubject: process.env.METRICS_SUBJECT || 'metrics.>',
+    deadLetterSubject: process.env.METRICS_DLQ_SUBJECT || 'metrics.dlq',
+    maxUniqueSeries: Number(process.env.MAX_UNIQUE_SERIES || 10000),
+    maxTagKeys: Number(process.env.MAX_TAG_KEYS || 20),
+    maxTagValueLength: Number(process.env.MAX_TAG_VALUE_LENGTH || 120),
   },
 };
 

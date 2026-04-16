@@ -1,5 +1,5 @@
 import { Logger } from '../config/logger';
-import { Metric } from '@itwatchtower/shared';
+import type { Metric } from '@itwatchtower/shared';
 
 /**
  * Metric validator
@@ -34,7 +34,7 @@ export class MetricsValidator {
       this.errors.push('Metric name is required');
     }
 
-    if (!this.isValidMetricName(metric.metricName)) {
+    if (metric.metricName && !this.isValidMetricName(metric.metricName)) {
       this.errors.push('Invalid metric name format');
     }
 
@@ -63,7 +63,7 @@ export class MetricsValidator {
    * Validate metric name format
    */
   private isValidMetricName(name: string): boolean {
-    return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
+    return /^[a-zA-Z_:][a-zA-Z0-9_:]*$/.test(name.replace(/\./g, '_'));
   }
 
   /**

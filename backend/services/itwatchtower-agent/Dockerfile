@@ -5,12 +5,10 @@ WORKDIR /app
 # Install build dependencies
 RUN apk add --no-cache git gcc musl-dev
 
-
-# Only copy go.mod and go.sum if they exist
-COPY go.mod go.sum ./
-RUN if [ -f go.mod ]; then go mod download; fi
-
-COPY . .
+COPY backend/services/itwatchtower-agent/go.mod backend/services/itwatchtower-agent/go.sum ./
+RUN go mod download
+COPY backend/services/itwatchtower-agent/ ./
+RUN go test ./...
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o agent .
 
 # Final stage

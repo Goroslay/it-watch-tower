@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { Logger } from '../config/logger';
-import { Metric } from '@itwatchtower/shared';
+import type { Metric } from '@itwatchtower/shared';
 
 /**
  * VictoriaMetrics client for writing metrics
@@ -59,9 +59,9 @@ export class VictoriaMetricsClient {
     const metricsToFlush = this.batch.splice(0, this.batchSize);
 
     try {
-      const lines = metricsToFlush.map((metric) => this.metricToPromQL(metric)).join('\n');
+      const lines = metricsToFlush.map((metric) => this.metricToPrometheusLine(metric)).join('\n');
 
-      await this.client.post('/api/put', lines, {
+      await this.client.post('/api/v1/import/prometheus', lines, {
         headers: {
           'Content-Type': 'text/plain',
         },
@@ -79,17 +79,30 @@ export class VictoriaMetricsClient {
   /**
    * Convert a metric to PromQL format
    */
-  private metricToPromQL(metric: Metric): string {
+  private metricToPrometheusLine(metric: Metric): string {
     const tags = metric.tags || {};
     const tagString = Object.entries({ host: metric.host, service: metric.service, ...tags })
-      .map(([key, value]) => `${key}="${value}"`)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => `${this.sanitizeLabelName(key)}="${this.escapeLabelValue(value)}"`)
       .join(',');
 
-    const metricName = metric.metricName.replace(/\./g, '_');
+    const metricName = this.sanitizeMetricName(metric.metricName);
     const timestamp = metric.timestamp;
     const value = metric.metricValue;
 
     return `${metricName}{${tagString}} ${value} ${timestamp}`;
+  }
+
+  private sanitizeMetricName(name: string): string {
+    return name.replace(/[^a-zA-Z0-9_:]/g, '_').replace(/^[^a-zA-Z_:]/, '_');
+  }
+
+  private sanitizeLabelName(name: string): string {
+    return name.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^[^a-zA-Z_]/, '_');
+  }
+
+  private escapeLabelValue(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/"/g, '\\"');
   }
 
   /**

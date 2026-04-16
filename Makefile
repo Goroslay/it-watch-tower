@@ -1,4 +1,4 @@
-.PHONY: help install build dev test lint format clean docker-up docker-down backend frontend
+.PHONY: help install build dev test lint format clean docker-up docker-down docker-test-phase1 backend frontend
 
 # Default target
 help:
@@ -27,6 +27,7 @@ help:
 	@echo "  docker:up        - Start Docker containers (NATS, VictoriaMetrics, ClickHouse)"
 	@echo "  docker:down      - Stop Docker containers"
 	@echo "  docker:logs      - View Docker logs"
+	@echo "  docker:test-phase1 - Build and smoke test Phase 1 Docker services"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  clean            - Remove build artifacts and node_modules"
@@ -88,6 +89,9 @@ docker:down:
 
 docker:logs:
 	docker-compose logs -f
+
+docker:test-phase1:
+	./scripts/test-phase1-docker.sh
 
 backend:
 	cd backend && npm install

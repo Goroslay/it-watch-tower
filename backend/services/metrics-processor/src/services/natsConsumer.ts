@@ -1,6 +1,6 @@
-import { connect, NatsConnection, consumerOpts } from 'nats';
+import { connect, NatsConnection, consumerOpts, RetentionPolicy, StorageType, StringCodec } from 'nats';
 import { Logger } from '../config/logger';
-import { MetricsBatch } from '@itwatchtower/shared';
+import type { MetricsBatch } from '@itwatchtower/shared';
 
 /**
  * NATS consumer for metrics
@@ -8,6 +8,7 @@ import { MetricsBatch } from '@itwatchtower/shared';
 export class NatsConsumer {
   private connection: NatsConnection | null = null;
   private logger: Logger;
+  private codec = StringCodec();
   private natsUrl: string;
   private natsUser?: string;
   private natsPassword?: string;
@@ -63,13 +64,18 @@ export class NatsConsumer {
 
 
     try {
+      await this.ensureStream(['metrics.>']);
+
       // Get or create JetStream
       const js = this.connection.jetstream();
 
       // Build JetStream consumer options
       const opts = consumerOpts();
       opts.durable('metrics-processor-durable');
+      opts.deliverTo('metrics-processor-deliver');
       opts.queue('metrics-processor-queue');
+      opts.manualAck();
+      opts.maxDeliver(3);
 
       // Subscribe with JetStream
       const sub = await js.subscribe(subject, opts);
@@ -101,6 +107,33 @@ export class NatsConsumer {
     } catch (error) {
       this.logger.error('Failed to subscribe to metrics', error as Error);
       throw error;
+    }
+  }
+
+  async publishDeadLetter(subject: string, payload: unknown): Promise<void> {
+    if (!this.connection) {
+      throw new Error('Not connected to NATS');
+    }
+
+    this.connection.publish(subject, this.codec.encode(JSON.stringify(payload)));
+  }
+
+  private async ensureStream(subjects: string[]): Promise<void> {
+    if (!this.connection) {
+      throw new Error('Not connected to NATS');
+    }
+
+    const jsm = await this.connection.jetstreamManager();
+    try {
+      await jsm.streams.info('METRICS');
+    } catch (error) {
+      await jsm.streams.add({
+        name: 'METRICS',
+        subjects,
+        retention: RetentionPolicy.Limits,
+        storage: StorageType.File,
+      });
+      this.logger.info('Created NATS stream', { name: 'METRICS', subjects });
     }
   }
 

@@ -20,8 +20,8 @@ COPY backend/services/metrics-processor/package*.json ./
 COPY backend/services/metrics-processor/tsconfig.json ./
 COPY backend/services/metrics-processor/src ./src
 
-# Install dependencies and build
-RUN npm install && npm run build
+# Install dependencies, test, and build
+RUN npm install && npm test && npm run build
 
 # Expose port (if needed)
 EXPOSE 3000

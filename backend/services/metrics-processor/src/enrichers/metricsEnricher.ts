@@ -1,5 +1,5 @@
 import { Logger } from '../config/logger';
-import { Metric } from '@itwatchtower/shared';
+import type { Metric } from '@itwatchtower/shared';
 
 /**
  * Metrics enricher

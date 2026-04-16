@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # NATS Message Broker with JetStream
   nats:
@@ -13,14 +11,13 @@ services:
       - NATS_URL=nats://0.0.0.0:4222
     command: >
       -c /etc/nats/nats.conf
-      -m 8222
     volumes:
       - ./infrastructure/nats/nats.conf:/etc/nats/nats.conf
       - nats_data:/data/nats
     networks:
       - itwatchtower
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8222/varz"]
+      test: ["CMD", "nats-server", "--help"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -33,15 +30,12 @@ services:
       - "8428:8428"
     volumes:
       - victoria_metrics_data:/victoria-metrics-data
-    environment:
-      - RETENTION=2160h  # 90 days
     command:
       - "-storageDataPath=/victoria-metrics-data"
-      - "-retention=2160h"
     networks:
       - itwatchtower
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8428/health"]
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8428/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -82,8 +76,40 @@ services:
       - itwatchtower
     environment:
       - NODE_ENV=production
+      - NATS_URL=nats://nats:4222
+      - NATS_USER=processor
+      - NATS_PASSWORD=processor-password
+      - VICTORIA_METRICS_URL=http://victoria-metrics:8428
     healthcheck:
       test: ["CMD", "node", "-e", "console.log('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  itwatchtower-agent:
+    build:
+      context: .
+      dockerfile: backend/services/itwatchtower-agent/Dockerfile
+    container_name: itwatchtower-agent
+    depends_on:
+      - nats
+    networks:
+      - itwatchtower
+    environment:
+      - NATS_URL=nats://nats:4222
+      - NATS_USER=agent
+      - NATS_PASSWORD=agent-password
+      - AGENT_NAME=docker-agent
+      - METRICS_INTERVAL=15s
+      - LOGS_INTERVAL=30s
+      - LOG_PATHS=/host/var/log/syslog,/host/var/log/messages
+      - LOG_TAIL_FROM_START=false
+    volumes:
+      - /var/log:/host/var/log:ro
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9090/health"]
       interval: 30s
       timeout: 10s
       retries: 3
