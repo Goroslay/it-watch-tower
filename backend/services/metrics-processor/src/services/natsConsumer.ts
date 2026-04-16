@@ -1,4 +1,4 @@
-import { connect, NatsConnection, SubscriptionOptions } from 'nats';
+import { connect, NatsConnection, consumerOpts } from 'nats';
 import { Logger } from '../config/logger';
 import { MetricsBatch } from '@itwatchtower/shared';
 
@@ -61,15 +61,18 @@ export class NatsConsumer {
     }
 
 
+
     try {
       // Get or create JetStream
       const js = this.connection.jetstream();
 
+      // Build JetStream consumer options
+      const opts = consumerOpts();
+      opts.durable('metrics-processor-durable');
+      opts.queue('metrics-processor-queue');
+
       // Subscribe with JetStream
-      const sub = await js.subscribe(subject, {
-        queue: 'metrics-processor-queue',
-        durable_name: 'metrics-processor-durable',
-      });
+      const sub = await js.subscribe(subject, opts);
 
       this.logger.info('Subscribed to metrics', { subject });
 
