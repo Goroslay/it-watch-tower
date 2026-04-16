@@ -8,9 +8,11 @@ COPY backend/shared/tsconfig.json ./
 COPY backend/shared/src ./src
 RUN npm install && npm run build
 
+
 WORKDIR /app
 COPY backend/services/dashboard/package*.json ./
 COPY backend/services/dashboard/tsconfig.json ./
+COPY backend/services/dashboard/index.html ./
 COPY backend/services/dashboard/src ./src
 RUN npm install && npm run build
 
