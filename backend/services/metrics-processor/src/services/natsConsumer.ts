@@ -60,22 +60,15 @@ export class NatsConsumer {
       throw new Error('Not connected to NATS');
     }
 
-    try {
-      const opts: SubscriptionOptions = {
-        durable: 'metrics-processor-durable',
-        flow_control: {
-          interval: 10000,
-          max_out: 100,
-        },
-      };
 
+    try {
       // Get or create JetStream
       const js = this.connection.jetstream();
 
       // Subscribe with JetStream
       const sub = await js.subscribe(subject, {
         queue: 'metrics-processor-queue',
-        ...opts,
+        durable_name: 'metrics-processor-durable',
       });
 
       this.logger.info('Subscribed to metrics', { subject });
