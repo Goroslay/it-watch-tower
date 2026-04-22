@@ -76,11 +76,37 @@ export interface LogEntry {
   message: string;
 }
 
-export async function fetchLogs(host?: string, limit = 30): Promise<LogEntry[]> {
+export async function fetchLogs(
+  host?: string,
+  limit = 30,
+  opts: { level?: string; service?: string; search?: string; offset?: number } = {},
+): Promise<LogEntry[]> {
   const params = new URLSearchParams({ limit: String(limit) });
-  if (host) params.set('host', host);
+  if (host)          params.set('host', host);
+  if (opts.level)    params.set('level', opts.level);
+  if (opts.service)  params.set('service', opts.service);
+  if (opts.search)   params.set('search', opts.search);
+  if (opts.offset)   params.set('offset', String(opts.offset));
   const data = await request<{ logs: LogEntry[] }>(`/api/logs?${params}`);
   return data.logs;
+}
+
+export interface HostInfo {
+  hostname: string;
+  ip_address: string;
+  status: string;
+  last_seen: string;
+  agent_version: string;
+  client_id: string | null;
+  client_name: string | null;
+  env_id: string | null;
+  env_name: string | null;
+  env_type: string | null;
+}
+
+export async function fetchHostsInfo(): Promise<HostInfo[]> {
+  const data = await request<{ hosts: HostInfo[] }>('/api/metrics/hosts/info');
+  return data.hosts;
 }
 
 export interface AlertEntry {

@@ -19,6 +19,7 @@ import usersRouter from './routes/admin/users';
 import hostsAdminRouter from './routes/admin/hosts';
 import alertRulesRouter from './routes/admin/alertRules';
 import internalRouter from './routes/internal';
+import sseRouter from './routes/sse';
 
 const logger = new Logger('BackendAPI', config.service.logLevel);
 
@@ -61,6 +62,9 @@ async function main(): Promise<void> {
 
   // Internal — alert engine only (X-Internal-Key)
   app.use('/internal', internalRouter);
+
+  // SSE — real-time log streaming
+  app.use('/api/sse', authMiddleware, sseRouter);
 
   app.listen(config.server.port, () => {
     logger.info(`Backend API listening on port ${config.server.port}`);

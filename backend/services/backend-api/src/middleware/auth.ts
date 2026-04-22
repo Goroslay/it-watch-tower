@@ -15,11 +15,12 @@ export interface AuthRequest extends Request {
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction): void {
   const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
+  const queryToken = typeof req.query['token'] === 'string' ? req.query['token'] : null;
+  if (!header?.startsWith('Bearer ') && !queryToken) {
     res.status(401).json({ error: 'Missing or invalid Authorization header' });
     return;
   }
-  const token = header.slice(7);
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : queryToken!;
   try {
     req.user = jwt.verify(token, config.auth.jwtSecret) as TokenPayload;
     next();

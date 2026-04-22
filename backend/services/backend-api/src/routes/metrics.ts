@@ -3,6 +3,7 @@ import axios from 'axios';
 import config from '../config';
 import { AuthRequest } from '../middleware/auth';
 import { getAllowedHostnames } from '../db/helpers';
+import { getDb } from '../db';
 
 const router = Router();
 const vmUrl = config.victoriaMetrics.url;
@@ -14,6 +15,23 @@ router.get('/names', async (_req: AuthRequest, res: Response): Promise<void> => 
   } catch (err) {
     res.status(502).json({ error: 'Failed to query VictoriaMetrics', detail: (err as Error).message });
   }
+});
+
+// Returns hosts with client/environment info for tree navigation
+router.get('/hosts/info', (req: AuthRequest, res: Response): void => {
+  const allowed = getAllowedHostnames(req.user!);
+  const rows = getDb().prepare(`
+    SELECT hr.hostname, hr.ip_address, hr.status, hr.last_seen, hr.agent_version,
+           c.id   AS client_id,   c.name AS client_name,
+           e.id   AS env_id,      e.name AS env_name, e.type AS env_type
+    FROM host_registry hr
+    LEFT JOIN clients      c ON hr.client_id      = c.id
+    LEFT JOIN environments e ON hr.environment_id = e.id
+    ORDER BY c.name, e.name, hr.hostname
+  `).all() as Record<string, string>[];
+
+  const filtered = allowed === null ? rows : rows.filter((r) => allowed.includes(r['hostname']));
+  res.json({ hosts: filtered });
 });
 
 router.get('/hosts', async (req: AuthRequest, res: Response): Promise<void> => {

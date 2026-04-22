@@ -13,7 +13,7 @@ async function chQuery<T>(sql: string): Promise<T[]> {
 }
 
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { host, level, limit = '50', offset = '0' } = req.query as Record<string, string>;
+  const { host, level, service, search, limit = '50', offset = '0' } = req.query as Record<string, string>;
 
   const conditions: string[] = [];
 
@@ -22,8 +22,10 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     if (allowed.length === 0) { res.json({ logs: [], total: 0 }); return; }
     conditions.push(`host IN ${buildHostInClause(allowed)}`);
   }
-  if (host) conditions.push(`host = '${host.replace(/'/g, '')}'`);
-  if (level) conditions.push(`log_level = '${level.replace(/'/g, '')}'`);
+  if (host)    conditions.push(`host = '${host.replace(/'/g, '')}'`);
+  if (level)   conditions.push(`log_level = '${level.replace(/'/g, '')}'`);
+  if (service) conditions.push(`service = '${service.replace(/'/g, '')}'`);
+  if (search)  conditions.push(`message ILIKE '%${search.replace(/'/g, '').replace(/%/g, '')}%'`);
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const sql = `SELECT timestamp, host, service, log_level, message, metadata

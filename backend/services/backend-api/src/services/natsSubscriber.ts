@@ -1,4 +1,4 @@
-import { connect, NatsConnection, StringCodec, Msg } from 'nats';
+import { connect, NatsConnection, StringCodec, Msg, Subscription } from 'nats';
 import { getDb } from '../db';
 import { Logger } from '../config/logger';
 
@@ -111,6 +111,11 @@ export class NatsSubscriber {
       restartEnabled,
     );
     this.logger.info('Agent registered', { hostname: data.hostname, ip: data.ip_address });
+  }
+
+  subscribe(subject: string): Subscription {
+    if (!this.conn) throw new Error('NATS not connected');
+    return this.conn.subscribe(subject);
   }
 
   async disconnect(): Promise<void> {
