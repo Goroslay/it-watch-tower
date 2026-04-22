@@ -1,59 +1,47 @@
 import { randomUUID } from 'crypto';
+import axios from 'axios';
 import { VictoriaMetricsClient } from '../services/victoriaMetricsClient';
 import { ClickhouseClient } from '../services/clickhouseClient';
 import { Logger } from '../config/logger';
+import config from '../config';
+import { notify } from '../services/notifier';
 
-interface Rule {
+export interface AlertRule {
+  id: string;
   name: string;
-  metric: string;
-  operator: 'gt' | 'lt';
+  promql: string;
+  operator: 'gt' | 'lt' | 'gte' | 'lte';
   threshold: number;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  service: string;
-  message: (host: string, value: number) => string;
+  severity: string;
+  for_count: number;
+  notify_slack: number;
+  notify_email: string;
 }
 
-const RULES: Rule[] = [
-  {
-    name: 'high_cpu',
-    metric: 'system_cpu_usage_percent',
-    operator: 'gt',
-    threshold: 85,
-    severity: 'high',
-    service: 'system',
-    message: (host, v) => `CPU usage at ${v.toFixed(1)}% on ${host} (threshold: 85%)`,
-  },
-  {
-    name: 'high_memory',
-    metric: 'system_memory_usage_percent',
-    operator: 'gt',
-    threshold: 90,
-    severity: 'high',
-    service: 'system',
-    message: (host, v) => `Memory usage at ${v.toFixed(1)}% on ${host} (threshold: 90%)`,
-  },
-  {
-    name: 'high_disk',
-    metric: 'system_disk_usage_percent',
-    operator: 'gt',
-    threshold: 90,
-    severity: 'critical',
-    service: 'system',
-    message: (host, v) => `Disk usage at ${v.toFixed(1)}% on ${host} (threshold: 90%)`,
-  },
-];
+interface FiringState {
+  alertId: string;
+  pendingCount: number; // evaluations above threshold while not yet firing
+  firing: boolean;
+}
+
+function crosses(operator: string, value: number, threshold: number): boolean {
+  switch (operator) {
+    case 'gt':  return value > threshold;
+    case 'lt':  return value < threshold;
+    case 'gte': return value >= threshold;
+    case 'lte': return value <= threshold;
+    default:    return false;
+  }
+}
 
 function nowTs(): string {
   return new Date().toISOString().replace('T', ' ').substring(0, 19);
 }
 
-function crosses(rule: Rule, value: number): boolean {
-  return rule.operator === 'gt' ? value > rule.threshold : value < rule.threshold;
-}
-
 export class Evaluator {
   private logger: Logger;
-  private firing = new Map<string, string>(); // key=rule:host, value=alert_id
+  private rules: AlertRule[] = [];
+  private states = new Map<string, FiringState>(); // key = ruleName:host
 
   constructor(
     private vm: VictoriaMetricsClient,
@@ -62,8 +50,24 @@ export class Evaluator {
     this.logger = new Logger('Evaluator');
   }
 
+  async loadRules(): Promise<void> {
+    try {
+      const res = await axios.get<{ rules: AlertRule[] }>(
+        `${config.backendApi.url}/internal/alert-rules`,
+        {
+          headers: { 'x-internal-key': config.backendApi.internalSecret },
+          timeout: 5000,
+        },
+      );
+      this.rules = res.data.rules ?? [];
+      this.logger.info(`Loaded ${this.rules.length} alert rules`);
+    } catch (err) {
+      this.logger.error('Failed to load alert rules from backend-api', err as Error);
+    }
+  }
+
   async evaluate(): Promise<void> {
-    for (const rule of RULES) {
+    for (const rule of this.rules) {
       try {
         await this.evaluateRule(rule);
       } catch (err) {
@@ -72,54 +76,84 @@ export class Evaluator {
     }
   }
 
-  private async evaluateRule(rule: Rule): Promise<void> {
-    const samples = await this.vm.query(rule.metric);
+  private async evaluateRule(rule: AlertRule): Promise<void> {
+    const samples = await this.vm.query(rule.promql);
 
     for (const sample of samples) {
       const key = `${rule.name}:${sample.host}`;
-      const isFiring = this.firing.has(key);
-      const shouldFire = crosses(rule, sample.value);
+      let state = this.states.get(key);
+      if (!state) {
+        state = { alertId: randomUUID(), pendingCount: 0, firing: false };
+        this.states.set(key, state);
+      }
 
-      if (shouldFire && !isFiring) {
-        const alertId = randomUUID();
-        this.firing.set(key, alertId);
-        const ts = nowTs();
+      const shouldFire = crosses(rule.operator, sample.value, rule.threshold);
 
-        await this.ch.insertAlert({
-          timestamp: ts,
-          alert_id: alertId,
-          host: sample.host,
-          service: rule.service,
-          rule_name: rule.name,
-          severity: rule.severity,
-          status: 'firing',
-          message: rule.message(sample.host, sample.value),
-          metadata: { metric: rule.metric, value: String(sample.value) },
-          fired_at: ts,
-          resolved_at: '1970-01-01 00:00:00',
-        });
+      if (shouldFire) {
+        state.pendingCount++;
 
-        this.logger.warn(`Alert firing: ${rule.name}`, { host: sample.host, value: sample.value });
-      } else if (!shouldFire && isFiring) {
-        const alertId = this.firing.get(key)!;
-        this.firing.delete(key);
-        const ts = nowTs();
+        // Fire only after for_count consecutive evaluations
+        if (!state.firing && state.pendingCount >= rule.for_count) {
+          state.firing = true;
+          state.alertId = randomUUID();
+          const ts = nowTs();
 
-        await this.ch.insertAlert({
-          timestamp: ts,
-          alert_id: alertId,
-          host: sample.host,
-          service: rule.service,
-          rule_name: rule.name,
-          severity: rule.severity,
-          status: 'resolved',
-          message: `${rule.name} resolved on ${sample.host}`,
-          metadata: { metric: rule.metric, value: String(sample.value) },
-          fired_at: '1970-01-01 00:00:00',
-          resolved_at: ts,
-        });
+          const message = `${rule.name}: value ${sample.value.toFixed(2)} ${rule.operator} ${rule.threshold} on ${sample.host}`;
 
-        this.logger.info(`Alert resolved: ${rule.name}`, { host: sample.host });
+          await this.ch.insertAlert({
+            timestamp: ts,
+            alert_id: state.alertId,
+            host: sample.host,
+            service: sample.labels['service'] ?? rule.name,
+            rule_name: rule.name,
+            severity: rule.severity,
+            status: 'firing',
+            message,
+            metadata: { metric: rule.promql, value: String(sample.value), rule_id: rule.id },
+            fired_at: ts,
+            resolved_at: '1970-01-01 00:00:00',
+          });
+
+          this.logger.warn(`Alert firing: ${rule.name}`, { host: sample.host, value: sample.value, after: state.pendingCount });
+
+          await notify(
+            { ruleName: rule.name, host: sample.host, severity: rule.severity, message, status: 'firing', value: sample.value, threshold: rule.threshold },
+            rule.notify_slack === 1,
+            rule.notify_email,
+          );
+        }
+      } else {
+        // Below threshold — resolve if was firing
+        if (state.firing) {
+          state.firing = false;
+          const ts = nowTs();
+          const message = `${rule.name} resolved on ${sample.host} (value: ${sample.value.toFixed(2)})`;
+
+          await this.ch.insertAlert({
+            timestamp: ts,
+            alert_id: state.alertId,
+            host: sample.host,
+            service: sample.labels['service'] ?? rule.name,
+            rule_name: rule.name,
+            severity: rule.severity,
+            status: 'resolved',
+            message,
+            metadata: { metric: rule.promql, value: String(sample.value), rule_id: rule.id },
+            fired_at: '1970-01-01 00:00:00',
+            resolved_at: ts,
+          });
+
+          this.logger.info(`Alert resolved: ${rule.name}`, { host: sample.host, value: sample.value });
+
+          await notify(
+            { ruleName: rule.name, host: sample.host, severity: rule.severity, message, status: 'resolved', value: sample.value, threshold: rule.threshold },
+            rule.notify_slack === 1,
+            rule.notify_email,
+          );
+        }
+        // Reset pending count once back below threshold
+        state.pendingCount = 0;
+        state.alertId = randomUUID();
       }
     }
   }

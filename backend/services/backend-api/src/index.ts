@@ -17,6 +17,8 @@ import clientsRouter from './routes/admin/clients';
 import environmentsRouter from './routes/admin/environments';
 import usersRouter from './routes/admin/users';
 import hostsAdminRouter from './routes/admin/hosts';
+import alertRulesRouter from './routes/admin/alertRules';
+import internalRouter from './routes/internal';
 
 const logger = new Logger('BackendAPI', config.service.logLevel);
 
@@ -55,6 +57,10 @@ async function main(): Promise<void> {
   app.use('/admin/environments', authMiddleware, adminOnly, environmentsRouter);
   app.use('/admin/users',        authMiddleware, adminOnly, usersRouter);
   app.use('/admin/hosts',        authMiddleware, adminOnly, hostsAdminRouter);
+  app.use('/admin/alert-rules',  authMiddleware, adminOnly, alertRulesRouter);
+
+  // Internal — alert engine only (X-Internal-Key)
+  app.use('/internal', internalRouter);
 
   app.listen(config.server.port, () => {
     logger.info(`Backend API listening on port ${config.server.port}`);

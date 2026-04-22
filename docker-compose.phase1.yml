@@ -111,6 +111,8 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+      backend-api:
+        condition: service_healthy
     networks:
       - itwatchtower
     restart: unless-stopped
@@ -120,6 +122,14 @@ services:
       - CLICKHOUSE_URL=http://clickhouse:8123
       - CLICKHOUSE_DB=itwatchtower
       - EVAL_INTERVAL_MS=30000
+      - BACKEND_API_URL=http://backend-api:3003
+      - INTERNAL_SECRET=itwatchtower-internal
+      # SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+      # SMTP_HOST=smtp.gmail.com
+      # SMTP_PORT=587
+      # SMTP_USER=alerts@empresa.com
+      # SMTP_PASS=password
+      # SMTP_FROM=IT Watch Tower <alerts@empresa.com>
 
   backend-api:
     build:
@@ -151,6 +161,7 @@ services:
       - VICTORIA_METRICS_URL=http://victoria-metrics:8428
       - CLICKHOUSE_URL=http://clickhouse:8123
       - CLICKHOUSE_DB=itwatchtower
+      - INTERNAL_SECRET=itwatchtower-internal
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3003/health"]
       interval: 30s

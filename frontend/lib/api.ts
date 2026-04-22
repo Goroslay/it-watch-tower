@@ -228,6 +228,39 @@ export async function unassignHost(hostname: string): Promise<void> {
   await request(`/admin/hosts/${hostname}/assign`, { method: 'DELETE' });
 }
 
+// ── Alert rules ───────────────────────────────────────────────────────────────
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  promql: string;
+  operator: 'gt' | 'lt' | 'gte' | 'lte';
+  threshold: number;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  for_count: number;
+  enabled: number;
+  notify_slack: number;
+  notify_email: string;
+  created_at: string;
+}
+
+export async function fetchAlertRules(): Promise<AlertRule[]> {
+  const data = await request<{ rules: AlertRule[] }>('/admin/alert-rules');
+  return data.rules;
+}
+
+export async function createAlertRule(body: Omit<AlertRule, 'id' | 'created_at'>): Promise<AlertRule> {
+  return request<AlertRule>('/admin/alert-rules', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateAlertRule(id: string, body: Partial<Omit<AlertRule, 'id' | 'created_at'>>): Promise<AlertRule> {
+  return request<AlertRule>(`/admin/alert-rules/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export async function deleteAlertRule(id: string): Promise<void> {
+  await request(`/admin/alert-rules/${id}`, { method: 'DELETE' });
+}
+
 // ── Actions ────────────────────────────────────────────────────────────────────
 
 export interface HostServices {

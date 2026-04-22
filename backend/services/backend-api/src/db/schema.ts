@@ -62,4 +62,18 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   success     INTEGER DEFAULT 1,
   created_at  TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL UNIQUE,
+  promql       TEXT NOT NULL,
+  operator     TEXT NOT NULL DEFAULT 'gt',
+  threshold    REAL NOT NULL,
+  severity     TEXT NOT NULL DEFAULT 'high',
+  for_count    INTEGER NOT NULL DEFAULT 1,
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  notify_slack INTEGER NOT NULL DEFAULT 0,
+  notify_email TEXT NOT NULL DEFAULT '',
+  created_at   TEXT DEFAULT (datetime('now'))
+);
 `;

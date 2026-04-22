@@ -16,11 +16,30 @@ export function initDb(path: string): void {
   db.exec(SCHEMA);
   runMigrations();
   seedAdmin();
+  seedDefaultAlertRules();
 }
 
 function runMigrations(): void {
   try { db.exec("ALTER TABLE host_registry ADD COLUMN allowed_units TEXT NOT NULL DEFAULT '[]'"); } catch { /* already exists */ }
   try { db.exec("ALTER TABLE host_registry ADD COLUMN restart_server_enabled INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
+}
+
+function seedDefaultAlertRules(): void {
+  const count = (db.prepare('SELECT COUNT(*) as n FROM alert_rules').get() as { n: number }).n;
+  if (count > 0) return;
+
+  const defaults = [
+    { id: randomUUID(), name: 'high_cpu',    promql: 'system_cpu_usage_percent',              operator: 'gt', threshold: 85, severity: 'high',     for_count: 2 },
+    { id: randomUUID(), name: 'high_memory', promql: 'system_memory_usage_percent',           operator: 'gt', threshold: 90, severity: 'high',     for_count: 2 },
+    { id: randomUUID(), name: 'high_disk',   promql: 'system_disk_usage_percent{path="/"}',   operator: 'gt', threshold: 90, severity: 'critical', for_count: 1 },
+    { id: randomUUID(), name: 'high_load',   promql: 'system_load_avg_5m',                    operator: 'gt', threshold: 4,  severity: 'medium',   for_count: 3 },
+  ];
+
+  const stmt = db.prepare(`
+    INSERT INTO alert_rules (id, name, promql, operator, threshold, severity, for_count, enabled, notify_slack, notify_email)
+    VALUES (@id, @name, @promql, @operator, @threshold, @severity, @for_count, 1, 0, '')
+  `);
+  for (const rule of defaults) stmt.run(rule);
 }
 
 function seedAdmin(): void {

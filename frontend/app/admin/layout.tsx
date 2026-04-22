@@ -34,6 +34,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/environments', label: 'Ambientes' },
     { href: '/admin/users', label: 'Usuarios' },
     { href: '/admin/hosts', label: 'Hosts' },
+    { href: '/admin/alert-rules', label: 'Alertas' },
     { href: '/admin/audit', label: 'Audit Log' },
   ];
 
