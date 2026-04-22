@@ -8,27 +8,32 @@ interface LogData {
 export class Logger {
   private context: string;
   private logLevel: string;
+  private tz = 'America/Bogota';
 
   constructor(context: string, logLevel: string = 'info') {
     this.context = context;
     this.logLevel = logLevel;
   }
 
+  private now(): string {
+    return new Date().toLocaleString('sv-SE', { timeZone: this.tz, hour12: false }).replace(' ', 'T');
+  }
+
   debug(msg: string, data?: LogData): void {
     if (this.shouldLog('debug')) {
-      console.log(`[${new Date().toISOString()}] [DEBUG] [${this.context}] ${msg}`, data ?? '');
+      console.log(`[${this.now()}] [DEBUG] [${this.context}] ${msg}`, data ?? '');
     }
   }
 
   info(msg: string, data?: LogData): void {
     if (this.shouldLog('info')) {
-      console.log(`[${new Date().toISOString()}] [INFO] [${this.context}] ${msg}`, data ?? '');
+      console.log(`[${this.now()}] [INFO] [${this.context}] ${msg}`, data ?? '');
     }
   }
 
   warn(msg: string, data?: LogData): void {
     if (this.shouldLog('warn')) {
-      console.warn(`[${new Date().toISOString()}] [WARN] [${this.context}] ${msg}`, data ?? '');
+      console.warn(`[${this.now()}] [WARN] [${this.context}] ${msg}`, data ?? '');
     }
   }
 
@@ -36,12 +41,12 @@ export class Logger {
     if (this.shouldLog('error')) {
       if (error instanceof Error) {
         console.error(
-          `[${new Date().toISOString()}] [ERROR] [${this.context}] ${msg}`,
+          `[${this.now()}] [ERROR] [${this.context}] ${msg}`,
           error.message,
           error.stack
         );
       } else {
-        console.error(`[${new Date().toISOString()}] [ERROR] [${this.context}] ${msg}`, error ?? '');
+        console.error(`[${this.now()}] [ERROR] [${this.context}] ${msg}`, error ?? '');
       }
     }
   }

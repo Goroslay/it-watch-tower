@@ -8,8 +8,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -55,18 +57,75 @@ type LogsBatch struct {
 	SourceAgent string     `json:"sourceAgent"`
 }
 
+const agentVersion = "0.4.0"
+
+type AgentRegister struct {
+	Hostname             string   `json:"hostname"`
+	IPAddress            string   `json:"ip_address"`
+	Platform             string   `json:"platform"`
+	Arch                 string   `json:"arch"`
+	OSVersion            string   `json:"os_version"`
+	AgentVersion         string   `json:"agent_version"`
+	DetectedServices     []string `json:"detected_services"`
+	AllowedUnits         []string `json:"allowed_units"`
+	RestartServerEnabled bool     `json:"restart_server_enabled"`
+}
+
+type AgentHeartbeat struct {
+	Hostname  string `json:"hostname"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+type ActionRequest struct {
+	ID          string `json:"id"`
+	Action      string `json:"action"`
+	Unit        string `json:"unit"`
+	RequestedBy string `json:"requested_by"`
+}
+
+type ActionResult struct {
+	ID         string `json:"id"`
+	Success    bool   `json:"success"`
+	Message    string `json:"message"`
+	ExecutedAt int64  `json:"executed_at"`
+}
+
 type Agent struct {
-	name             string
-	hostname         string
-	natsURL          string
-	natsUser         string
-	natsPassword     string
-	metricsInterval  time.Duration
-	logsInterval     time.Duration
-	logPaths         []string
-	logTailFromStart bool
-	logOffsets       map[string]int64
-	natsConn         *nats.Conn
+	name                 string
+	hostname             string
+	natsURL              string
+	natsUser             string
+	natsPassword         string
+	metricsInterval      time.Duration
+	logsInterval         time.Duration
+	logPaths             []string
+	logTailFromStart     bool
+	logOffsets           map[string]int64
+	natsConn             *nats.Conn
+	allowedUnits         []string
+	restartServerEnabled bool
+	// extra system metrics
+	diskPaths []string
+	// app metric collectors (process/jstat/proc based, no HTTP required)
+	nginxPaths   []NamedPath
+	pm2Enabled   bool
+	tomcatPaths  []NamedPath
+	wildflyPaths []NamedPath
+	oracleEnabled bool
+	oracleDSN     string
+	// access log paths for request/error metrics (supports glob patterns for rotating logs)
+	nginxAccessLogPaths   []NamedPath
+	tomcatAccessLogPaths  []NamedPath
+	wildflyAccessLogPaths []NamedPath
+	// access log counters (monotonically increasing, reset on restart)
+	accessLogOffsets map[string]int64
+	accessReqTotals  map[string]float64
+	accessErrTotals  map[string]float64
+	// app log file tailing (error/app logs → displayed in Logs tab)
+	nginxLogPaths   []NamedPath
+	tomcatLogPaths  []NamedPath
+	wildflyLogPaths []NamedPath
+	pm2LogPaths     []NamedPath
 }
 
 func main() {
@@ -81,7 +140,9 @@ func main() {
 	}
 	defer agent.natsConn.Close()
 
-	log.Printf("IT Watch Tower Agent started name=%s host=%s nats=%s", agent.name, agent.hostname, agent.natsURL)
+	log.Printf("IT Watch Tower Agent started name=%s host=%s nats=%s version=%s", agent.name, agent.hostname, agent.natsURL, agentVersion)
+	agent.publishRegister()
+	agent.subscribeActions()
 	agent.run(ctx)
 	log.Println("Agent shutting down")
 }
@@ -95,16 +156,35 @@ func newAgent() *Agent {
 	name := env("AGENT_NAME", hostname)
 
 	return &Agent{
-		name:             name,
-		hostname:         hostname,
-		natsURL:          env("NATS_URL", "nats://localhost:4222"),
-		natsUser:         os.Getenv("NATS_USER"),
-		natsPassword:     os.Getenv("NATS_PASSWORD"),
-		metricsInterval:  durationEnv("METRICS_INTERVAL", 15*time.Second),
-		logsInterval:     durationEnv("LOGS_INTERVAL", 30*time.Second),
-		logPaths:         splitCSV(os.Getenv("LOG_PATHS")),
-		logTailFromStart: boolEnv("LOG_TAIL_FROM_START", false),
-		logOffsets:       map[string]int64{},
+		name:                 name,
+		hostname:             hostname,
+		natsURL:              env("NATS_URL", "nats://localhost:4222"),
+		natsUser:             os.Getenv("NATS_USER"),
+		natsPassword:         os.Getenv("NATS_PASSWORD"),
+		metricsInterval:      durationEnv("METRICS_INTERVAL", 15*time.Second),
+		logsInterval:         durationEnv("LOGS_INTERVAL", 30*time.Second),
+		logPaths:             splitCSV(os.Getenv("LOG_PATHS")),
+		logTailFromStart:     boolEnv("LOG_TAIL_FROM_START", false),
+		logOffsets:           map[string]int64{},
+		allowedUnits:         splitCSV(os.Getenv("ALLOWED_UNITS")),
+		restartServerEnabled: boolEnv("RESTART_SERVER_ENABLED", false),
+		diskPaths:             splitCSV(os.Getenv("DISK_PATHS")),
+		nginxPaths:            parseNamedPaths(os.Getenv("NGINX_PATHS")),
+		pm2Enabled:            boolEnv("PM2_ENABLED", false),
+		tomcatPaths:           parseNamedPaths(os.Getenv("TOMCAT_PATHS")),
+		wildflyPaths:          parseNamedPaths(os.Getenv("WILDFLY_PATHS")),
+		oracleEnabled:         boolEnv("ORACLE_ENABLED", false),
+		oracleDSN:             os.Getenv("ORACLE_DSN"),
+		nginxAccessLogPaths:   parseNamedPaths(os.Getenv("NGINX_ACCESS_LOG_PATHS")),
+		tomcatAccessLogPaths:  parseNamedPaths(os.Getenv("TOMCAT_ACCESS_LOG_PATHS")),
+		wildflyAccessLogPaths: parseNamedPaths(os.Getenv("WILDFLY_ACCESS_LOG_PATHS")),
+		accessLogOffsets:      map[string]int64{},
+		accessReqTotals:       map[string]float64{},
+		accessErrTotals:       map[string]float64{},
+		nginxLogPaths:         parseNamedPaths(os.Getenv("NGINX_LOG_PATHS")),
+		tomcatLogPaths:        parseNamedPaths(os.Getenv("TOMCAT_LOG_PATHS")),
+		wildflyLogPaths:       parseNamedPaths(os.Getenv("WILDFLY_LOG_PATHS")),
+		pm2LogPaths:           parseNamedPaths(os.Getenv("PM2_LOG_PATHS")),
 	}
 }
 
@@ -131,8 +211,10 @@ func (a *Agent) connect() error {
 func (a *Agent) run(ctx context.Context) {
 	metricsTicker := time.NewTicker(a.metricsInterval)
 	logsTicker := time.NewTicker(a.logsInterval)
+	heartbeatTicker := time.NewTicker(60 * time.Second)
 	defer metricsTicker.Stop()
 	defer logsTicker.Stop()
+	defer heartbeatTicker.Stop()
 
 	a.publishMetrics()
 	a.publishAgentLog("INFO", "agent started")
@@ -148,7 +230,148 @@ func (a *Agent) run(ctx context.Context) {
 		case <-logsTicker.C:
 			a.publishAgentLog("INFO", "agent heartbeat")
 			a.publishFileLogs()
+		case <-heartbeatTicker.C:
+			a.publishHeartbeat()
 		}
+	}
+}
+
+func primaryIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, iface := range ifaces {
+		if iface.Name == "lo" || strings.HasPrefix(iface.Name, "docker") || strings.HasPrefix(iface.Name, "br-") {
+			continue
+		}
+		for _, addr := range iface.Addrs {
+			ip := addr.Addr
+			if ip != "" && !strings.HasPrefix(ip, "127.") && !strings.Contains(ip, ":") {
+				// strip /prefix if present
+				if idx := strings.Index(ip, "/"); idx != -1 {
+					ip = ip[:idx]
+				}
+				return ip
+			}
+		}
+	}
+	return ""
+}
+
+func (a *Agent) publishRegister() {
+	processes, _ := process.Processes()
+	targets := []string{"nginx", "tomcat", "wildfly", "node", "oracle"}
+	detected := []string{}
+	for _, proc := range processes {
+		name, err := proc.Name()
+		if err != nil {
+			continue
+		}
+		lower := strings.ToLower(name)
+		for _, t := range targets {
+			if strings.Contains(lower, t) {
+				found := false
+				for _, d := range detected {
+					if d == t {
+						found = true
+						break
+					}
+				}
+				if !found {
+					detected = append(detected, t)
+				}
+			}
+		}
+	}
+
+	reg := AgentRegister{
+		Hostname:             a.hostname,
+		IPAddress:            primaryIP(),
+		Platform:             runtime.GOOS,
+		Arch:                 runtime.GOARCH,
+		OSVersion:            env("OS_VERSION", ""),
+		AgentVersion:         agentVersion,
+		DetectedServices:     detected,
+		AllowedUnits:         a.allowedUnits,
+		RestartServerEnabled: a.restartServerEnabled,
+	}
+	payload, err := json.Marshal(reg)
+	if err != nil {
+		return
+	}
+	if err := a.natsConn.Publish("agents.register", payload); err != nil {
+		log.Printf("failed to publish register: %v", err)
+	}
+}
+
+func (a *Agent) publishHeartbeat() {
+	hb := AgentHeartbeat{Hostname: a.hostname, Timestamp: time.Now().UnixMilli()}
+	payload, err := json.Marshal(hb)
+	if err != nil {
+		return
+	}
+	if err := a.natsConn.Publish("agents.heartbeat", payload); err != nil {
+		log.Printf("failed to publish heartbeat: %v", err)
+	}
+}
+
+func (a *Agent) subscribeActions() {
+	subject := "actions." + sanitizeSubjectToken(a.hostname)
+	_, err := a.natsConn.Subscribe(subject, func(msg *nats.Msg) {
+		var req ActionRequest
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			log.Printf("actions: failed to parse request: %v", err)
+			return
+		}
+		result := a.executeAction(req)
+		payload, _ := json.Marshal(result)
+		if msg.Reply != "" {
+			_ = msg.Respond(payload)
+		}
+		_ = a.natsConn.Publish("actions.result."+sanitizeSubjectToken(a.hostname), payload)
+		log.Printf("action executed id=%s action=%s unit=%s success=%v", req.ID, req.Action, req.Unit, result.Success)
+	})
+	if err != nil {
+		log.Printf("failed to subscribe to actions: %v", err)
+	}
+}
+
+func (a *Agent) executeAction(req ActionRequest) ActionResult {
+	now := time.Now().UnixMilli()
+	switch req.Action {
+	case "restart_service":
+		if req.Unit == "" {
+			return ActionResult{ID: req.ID, Success: false, Message: "unit name required", ExecutedAt: now}
+		}
+		allowed := false
+		for _, u := range a.allowedUnits {
+			if u == req.Unit {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return ActionResult{ID: req.ID, Success: false, Message: "unit not in whitelist: " + req.Unit, ExecutedAt: now}
+		}
+		out, err := exec.Command("systemctl", "restart", req.Unit).CombinedOutput()
+		if err != nil {
+			return ActionResult{ID: req.ID, Success: false, Message: fmt.Sprintf("systemctl restart %s: %v — %s", req.Unit, err, strings.TrimSpace(string(out))), ExecutedAt: now}
+		}
+		return ActionResult{ID: req.ID, Success: true, Message: req.Unit + " reiniciado correctamente", ExecutedAt: now}
+
+	case "restart_server":
+		if !a.restartServerEnabled {
+			return ActionResult{ID: req.ID, Success: false, Message: "reinicio de servidor no habilitado en este agente (RESTART_SERVER_ENABLED=false)", ExecutedAt: now}
+		}
+		go func() {
+			time.Sleep(3 * time.Second)
+			_ = exec.Command("shutdown", "-r", "now").Run()
+		}()
+		return ActionResult{ID: req.ID, Success: true, Message: "reinicio del servidor programado en 3s", ExecutedAt: now}
+
+	default:
+		return ActionResult{ID: req.ID, Success: false, Message: "acción desconocida: " + req.Action, ExecutedAt: now}
 	}
 }
 
@@ -224,24 +447,47 @@ func (a *Agent) publishLogEntries(entries []LogEntry) {
 }
 
 func (a *Agent) collectFileLogs() []LogEntry {
-	if len(a.logPaths) == 0 {
-		return nil
-	}
-
 	entries := make([]LogEntry, 0, 32)
 	for _, path := range a.logPaths {
-		pathEntries, err := a.collectFile(path, 100)
+		pathEntries, err := a.collectFile(path, filepath.Base(path), "", 100)
 		if err != nil {
 			log.Printf("failed to collect log file %s: %v", path, err)
 			continue
 		}
 		entries = append(entries, pathEntries...)
 	}
-
+	entries = append(entries, a.collectAppLogs()...)
 	return entries
 }
 
-func (a *Agent) collectFile(path string, maxLines int) ([]LogEntry, error) {
+func (a *Agent) collectAppLogs() []LogEntry {
+	type def struct{ service, instance, path string }
+	var defs []def
+	for _, np := range a.nginxLogPaths {
+		defs = append(defs, def{"nginx", np.Name, np.Path})
+	}
+	for _, np := range a.tomcatLogPaths {
+		defs = append(defs, def{"tomcat", np.Name, np.Path})
+	}
+	for _, np := range a.wildflyLogPaths {
+		defs = append(defs, def{"wildfly", np.Name, np.Path})
+	}
+	for _, np := range a.pm2LogPaths {
+		defs = append(defs, def{"pm2", np.Name, np.Path})
+	}
+	var entries []LogEntry
+	for _, d := range defs {
+		got, err := a.collectFile(d.path, d.service, d.instance, 100)
+		if err != nil {
+			log.Printf("app log tail %s: %v", d.path, err)
+			continue
+		}
+		entries = append(entries, got...)
+	}
+	return entries
+}
+
+func (a *Agent) collectFile(path, service, instance string, maxLines int) ([]LogEntry, error) {
 	stat, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -269,25 +515,25 @@ func (a *Agent) collectFile(path string, maxLines int) ([]LogEntry, error) {
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	meta := map[string]string{"agent": a.name, "path": path}
+	if instance != "" {
+		meta["instance"] = instance
+	}
+
 	entries := make([]LogEntry, 0, maxLines)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-
 		entries = append(entries, LogEntry{
 			Timestamp: time.Now().UnixMilli(),
 			Host:      a.hostname,
-			Service:   filepath.Base(path),
+			Service:   service,
 			Level:     detectLogLevel(line),
 			Message:   line,
-			Metadata: map[string]string{
-				"agent": a.name,
-				"path":  path,
-			},
+			Metadata:  meta,
 		})
-
 		if len(entries) >= maxLines {
 			break
 		}
@@ -345,6 +591,13 @@ func (a *Agent) collectMetrics() ([]Metric, error) {
 	for _, service := range detectServices(now, a.hostname) {
 		metrics = append(metrics, service)
 	}
+
+	metrics = append(metrics, a.collectExtraSystemMetrics(now)...)
+	metrics = append(metrics, a.collectNginxMetrics(now)...)
+	metrics = append(metrics, a.collectPM2Metrics(now)...)
+	metrics = append(metrics, a.collectTomcatMetrics(now)...)
+	metrics = append(metrics, a.collectWildflyMetrics(now)...)
+	metrics = append(metrics, a.collectOracleMetrics(now)...)
 
 	return metrics, nil
 }

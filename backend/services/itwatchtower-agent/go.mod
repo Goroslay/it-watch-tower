@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/nats-io/nats.go v1.33.1
 	github.com/shirou/gopsutil/v3 v3.24.5
+	github.com/sijms/go-ora/v2 v2.9.0
 )
 
 require (

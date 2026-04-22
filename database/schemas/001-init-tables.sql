@@ -23,7 +23,7 @@ ORDER BY id;
 
 -- Services table
 CREATE TABLE IF NOT EXISTS services (
-    id String PRIMARY KEY,
+    id String,
     host_id String NOT NULL,
     name String NOT NULL,
     type String,

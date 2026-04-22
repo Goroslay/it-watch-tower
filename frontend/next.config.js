@@ -1,24 +1,11 @@
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   reactStrictMode: true,
-  typescript: {
-    tsconfigPath: './tsconfig.json',
-  },
-  experimental: {
-    serverActions: {
-      allowedOrigins: ['localhost:3000', 'localhost:3001'],
-    },
-  },
-  redirects: async () => {
+  async redirects() {
     return [
-      {
-        source: '/',
-        destination: '/dashboard',
-        permanent: false,
-      },
+      { source: '/', destination: '/dashboard', permanent: false },
     ];
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;

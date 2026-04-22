@@ -1,0 +1,65 @@
+export const SCHEMA = `
+CREATE TABLE IF NOT EXISTS clients (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL UNIQUE,
+  description TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS environments (
+  id         TEXT PRIMARY KEY,
+  client_id  TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  type       TEXT NOT NULL DEFAULT 'custom',
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(client_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  username      TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role          TEXT NOT NULL DEFAULT 'viewer',
+  client_id     TEXT REFERENCES clients(id) ON DELETE SET NULL,
+  created_at    TEXT DEFAULT (datetime('now')),
+  updated_at    TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS user_permissions (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scope       TEXT NOT NULL,
+  scope_id    TEXT NOT NULL,
+  actions     TEXT NOT NULL DEFAULT '[]',
+  UNIQUE(user_id, scope, scope_id)
+);
+
+CREATE TABLE IF NOT EXISTS host_registry (
+  hostname       TEXT PRIMARY KEY,
+  ip_address     TEXT DEFAULT '',
+  platform       TEXT DEFAULT '',
+  arch           TEXT DEFAULT '',
+  os_version     TEXT DEFAULT '',
+  agent_version  TEXT DEFAULT '',
+  detected_services TEXT DEFAULT '[]',
+  status         TEXT DEFAULT 'online',
+  client_id      TEXT REFERENCES clients(id) ON DELETE SET NULL,
+  environment_id TEXT REFERENCES environments(id) ON DELETE SET NULL,
+  assigned_by    TEXT DEFAULT '',
+  assigned_at    TEXT DEFAULT '',
+  last_seen      TEXT DEFAULT (datetime('now')),
+  first_seen     TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  username    TEXT NOT NULL,
+  action      TEXT NOT NULL,
+  target_host TEXT DEFAULT '',
+  params      TEXT DEFAULT '{}',
+  result      TEXT DEFAULT '',
+  success     INTEGER DEFAULT 1,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+`;
