@@ -1,28 +1,23 @@
 services:
-  # NATS Message Broker with JetStream
   nats:
     image: nats:latest
     container_name: itwatchtower-nats
     ports:
       - "4222:4222"
-      - "6222:6222"
       - "8222:8222"
-    environment:
-      - NATS_URL=nats://0.0.0.0:4222
-    command: >
-      -c /etc/nats/nats.conf
+    command: -c /etc/nats/nats.conf
     volumes:
       - ./infrastructure/nats/nats.conf:/etc/nats/nats.conf
       - nats_data:/data/nats
     networks:
       - itwatchtower
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "nats-server", "--help"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # VictoriaMetrics for time-series metrics
   victoria-metrics:
     image: victoriametrics/victoria-metrics:latest
     container_name: itwatchtower-vm
@@ -32,15 +27,15 @@ services:
       - victoria_metrics_data:/victoria-metrics-data
     command:
       - "-storageDataPath=/victoria-metrics-data"
+      - "-retentionPeriod=90d"
     networks:
       - itwatchtower
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8428/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # ClickHouse for structured logs
 
   clickhouse:
     build:
@@ -58,8 +53,9 @@ services:
       - CLICKHOUSE_PASSWORD=
     networks:
       - itwatchtower
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8123/ping"]
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -68,66 +64,76 @@ services:
     build:
       context: .
       dockerfile: backend/services/metrics-processor/Dockerfile
-    container_name: metrics-processor
+    container_name: itwatchtower-metrics-processor
     depends_on:
-      - nats
-      - victoria-metrics
+      nats:
+        condition: service_healthy
+      victoria-metrics:
+        condition: service_healthy
     networks:
       - itwatchtower
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
       - NATS_URL=nats://nats:4222
       - NATS_USER=processor
       - NATS_PASSWORD=processor-password
       - VICTORIA_METRICS_URL=http://victoria-metrics:8428
-    healthcheck:
-      test: ["CMD", "node", "-e", "console.log('ok')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  itwatchtower-agent:
-    build:
-      context: .
-      dockerfile: backend/services/itwatchtower-agent/Dockerfile
-    container_name: itwatchtower-agent
-    depends_on:
-      - nats
-    networks:
-      - itwatchtower
-    environment:
-      - NATS_URL=nats://nats:4222
-      - NATS_USER=agent
-      - NATS_PASSWORD=agent-password
-      - AGENT_NAME=docker-agent
-      - METRICS_INTERVAL=15s
-      - LOGS_INTERVAL=30s
-      - LOG_PATHS=/host/var/log/syslog,/host/var/log/messages
-      - LOG_TAIL_FROM_START=false
-    volumes:
-      - /var/log:/host/var/log:ro
-    ports:
-      - "9090:9090"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:9090/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   logs-processor:
     build:
       context: .
       dockerfile: backend/services/logs-processor/Dockerfile
-    container_name: logs-processor
+    container_name: itwatchtower-logs-processor
     depends_on:
-      - nats
-      - clickhouse
+      nats:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
     networks:
       - itwatchtower
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
+      - NATS_URL=nats://nats:4222
+      - NATS_USER=processor
+      - NATS_PASSWORD=processor-password
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - CLICKHOUSE_DB=itwatchtower
+
+  backend-api:
+    build:
+      context: .
+      dockerfile: backend/services/backend-api/Dockerfile
+    container_name: itwatchtower-backend-api
+    depends_on:
+      nats:
+        condition: service_healthy
+      victoria-metrics:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "3003:3003"
+    volumes:
+      - backend_data:/data
+    networks:
+      - itwatchtower
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - API_PORT=3003
+      - JWT_SECRET=itwatchtower-change-in-prod
+      - SQLITE_PATH=/data/itwatchtower.db
+      - NATS_URL=nats://nats:4222
+      - NATS_USER=api
+      - NATS_PASSWORD=api-password
+      - VICTORIA_METRICS_URL=http://victoria-metrics:8428
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - CLICKHOUSE_DB=itwatchtower
+      - INTERNAL_SECRET=itwatchtower-internal
     healthcheck:
-      test: ["CMD", "node", "-e", "console.log('ok')"]
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3003/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -136,79 +142,60 @@ services:
     build:
       context: .
       dockerfile: backend/services/alert-engine/Dockerfile
-    container_name: alert-engine
+    container_name: itwatchtower-alert-engine
     depends_on:
-      - nats
-      - clickhouse
+      victoria-metrics:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      backend-api:
+        condition: service_healthy
     networks:
       - itwatchtower
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
-    healthcheck:
-      test: ["CMD", "node", "-e", "console.log('ok')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  backend-api:
-    build:
-      context: .
-      dockerfile: backend/services/backend-api/Dockerfile
-    container_name: backend-api
-    depends_on:
-      - nats
-      - clickhouse
-    networks:
-      - itwatchtower
-    environment:
-      - NODE_ENV=production
-    healthcheck:
-      test: ["CMD", "node", "-e", "console.log('ok')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  dashboard:
-    build:
-      context: .
-      dockerfile: backend/services/dashboard/Dockerfile
-    container_name: dashboard
-    depends_on:
-      - backend-api
-    networks:
-      - itwatchtower
-    environment:
-      - NODE_ENV=production
-    healthcheck:
-      test: ["CMD", "node", "-e", "console.log('ok')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+      - VICTORIA_METRICS_URL=http://victoria-metrics:8428
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - CLICKHOUSE_DB=itwatchtower
+      - EVAL_INTERVAL_MS=30000
+      - BACKEND_API_URL=http://backend-api:3003
+      - INTERNAL_SECRET=itwatchtower-internal
+      # Notificaciones - descomentar y configurar:
+      # - SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+      # - SMTP_HOST=smtp.gmail.com
+      # - SMTP_PORT=587
+      # - SMTP_USER=alerts@empresa.com
+      # - SMTP_PASS=password
+      # - SMTP_FROM=IT Watch Tower <alerts@empresa.com>
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: frontend
+      args:
+        - NEXT_PUBLIC_API_URL=http://192.168.15.168:3003
+    container_name: itwatchtower-frontend
     depends_on:
-      - backend-api
+      backend-api:
+        condition: service_healthy
     ports:
       - "4000:3000"
     networks:
       - itwatchtower
-    environment:
-      - NODE_ENV=production
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
+      start_period: 15s
       retries: 3
 
 volumes:
   nats_data:
   victoria_metrics_data:
   clickhouse_data:
+  backend_data:
 
 networks:
   itwatchtower:
