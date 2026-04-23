@@ -28,6 +28,18 @@ const SEVERITY_COLORS: Record<string, string> = {
   low:      'bg-blue-900/60 text-blue-300',
 };
 
+function actionLabel(action: string, unit?: string): string {
+  switch (action) {
+    case 'start_service': return `Iniciar ${unit ?? 'servicio'}`;
+    case 'stop_service': return `Detener ${unit ?? 'servicio'}`;
+    case 'restart_service': return `Reiniciar ${unit ?? 'servicio'}`;
+    case 'restart_pm2': return `Reiniciar PM2 ${unit ?? ''}`.trim();
+    case 'log_cleanup': return `Limpiar ${unit ?? 'log'}`;
+    case 'restart_server': return 'Reiniciar servidor';
+    default: return action;
+  }
+}
+
 function GaugeCard({ label, value, color }: { label: string; value: number | null; color: string }) {
   const pct = value ?? 0;
   const bar = pct > 90 ? 'bg-red-500' : pct > 75 ? 'bg-yellow-500' : 'bg-green-500';
@@ -399,7 +411,7 @@ export default function DashboardPage() {
                   </div>
 
                   {/* Actions panel */}
-                  {canAct && services && (services.units.length > 0 || (isAdmin && services.restart_server_enabled)) && (
+                  {canAct && services && (services.units.length > 0 || services.pm2_processes.length > 0 || services.log_cleanup_paths.length > 0 || (isAdmin && services.restart_server_enabled)) && (
                     <div className="bg-gray-800 rounded-xl p-5">
                       <h2 className="text-white font-semibold mb-4 text-sm">Acciones</h2>
                       {actionResult && (
@@ -410,10 +422,36 @@ export default function DashboardPage() {
                       )}
                       <div className="flex flex-wrap gap-3">
                         {services.units.map((unit) => (
-                          <button key={unit}
-                            onClick={() => setConfirmAction({ action: 'restart_service', unit })}
-                            className="bg-yellow-700/40 hover:bg-yellow-600/50 text-yellow-200 text-sm px-4 py-2 rounded-lg transition-colors border border-yellow-700/50">
-                            Reiniciar {unit}
+                          <div key={unit} className="flex overflow-hidden rounded-lg border border-yellow-700/50">
+                            <button
+                              onClick={() => setConfirmAction({ action: 'start_service', unit })}
+                              className="bg-green-800/40 hover:bg-green-700/50 text-green-200 text-sm px-3 py-2 transition-colors border-r border-yellow-700/50">
+                              Iniciar
+                            </button>
+                            <button
+                              onClick={() => setConfirmAction({ action: 'restart_service', unit })}
+                              className="bg-yellow-700/40 hover:bg-yellow-600/50 text-yellow-200 text-sm px-3 py-2 transition-colors border-r border-yellow-700/50">
+                              {unit}
+                            </button>
+                            <button
+                              onClick={() => setConfirmAction({ action: 'stop_service', unit })}
+                              className="bg-red-800/40 hover:bg-red-700/50 text-red-200 text-sm px-3 py-2 transition-colors">
+                              Detener
+                            </button>
+                          </div>
+                        ))}
+                        {services.pm2_processes.map((processName) => (
+                          <button key={`pm2-${processName}`}
+                            onClick={() => setConfirmAction({ action: 'restart_pm2', unit: processName })}
+                            className="bg-blue-800/40 hover:bg-blue-700/50 text-blue-200 text-sm px-4 py-2 rounded-lg transition-colors border border-blue-700/50">
+                            Reiniciar PM2 {processName}
+                          </button>
+                        ))}
+                        {services.log_cleanup_paths.map((path) => (
+                          <button key={`log-${path}`}
+                            onClick={() => setConfirmAction({ action: 'log_cleanup', unit: path })}
+                            className="bg-purple-800/40 hover:bg-purple-700/50 text-purple-200 text-sm px-4 py-2 rounded-lg transition-colors border border-purple-700/50">
+                            Limpiar {path.split('/').pop() || path}
                           </button>
                         ))}
                         {isAdmin && services.restart_server_enabled && (
@@ -438,17 +476,15 @@ export default function DashboardPage() {
           <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-sm w-full mx-4">
             <h3 className="text-white font-semibold text-base mb-3">¿Estás seguro?</h3>
             <p className="text-gray-300 text-sm mb-5">
-              {confirmAction.action === 'restart_service'
-                ? <><span className="text-yellow-300 font-mono">{confirmAction.unit}</span> en <span className="text-blue-400 font-mono">{selectedHost}</span></>
-                : <>Reiniciar el servidor <span className="text-red-400 font-mono">{selectedHost}</span> completo</>
-              }
+              <span className="text-yellow-300 font-mono">{actionLabel(confirmAction.action, confirmAction.unit)}</span>
+              {' '}en <span className="text-blue-400 font-mono">{selectedHost}</span>
             </p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setConfirmAction(null)} disabled={actionLoading}
                 className="text-gray-400 hover:text-white text-sm px-4 py-2 rounded transition-colors">Cancelar</button>
               <button onClick={() => void handleConfirmAction()} disabled={actionLoading}
                 className={`text-sm px-4 py-2 rounded transition-colors disabled:opacity-50 ${
-                  confirmAction.action === 'restart_server' ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-yellow-700 hover:bg-yellow-600 text-white'
+                  confirmAction.action === 'restart_server' || confirmAction.action === 'stop_service' || confirmAction.action === 'log_cleanup' ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-yellow-700 hover:bg-yellow-600 text-white'
                 }`}>
                 {actionLoading ? 'Ejecutando...' : 'Confirmar'}
               </button>

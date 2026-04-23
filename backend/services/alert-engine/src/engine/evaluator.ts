@@ -24,6 +24,13 @@ interface FiringState {
   firing: boolean;
 }
 
+interface PersistedAlertState {
+  state_key: string;
+  alert_id: string;
+  pending_count: number;
+  firing: number;
+}
+
 function crosses(operator: string, value: number, threshold: number): boolean {
   switch (operator) {
     case 'gt':  return value > threshold;
@@ -66,6 +73,30 @@ export class Evaluator {
     }
   }
 
+  async loadStates(): Promise<void> {
+    try {
+      const res = await axios.get<{ states: PersistedAlertState[] }>(
+        `${config.backendApi.url}/internal/alert-states`,
+        {
+          headers: { 'x-internal-key': config.backendApi.internalSecret },
+          timeout: 5000,
+        },
+      );
+
+      this.states.clear();
+      for (const state of res.data.states ?? []) {
+        this.states.set(state.state_key, {
+          alertId: state.alert_id,
+          pendingCount: Number(state.pending_count),
+          firing: state.firing === 1,
+        });
+      }
+      this.logger.info(`Loaded ${this.states.size} alert states`);
+    } catch (err) {
+      this.logger.error('Failed to load alert states from backend-api', err as Error);
+    }
+  }
+
   async evaluate(): Promise<void> {
     for (const rule of this.rules) {
       try {
@@ -91,11 +122,13 @@ export class Evaluator {
 
       if (shouldFire) {
         state.pendingCount++;
+        await this.persistState(key, rule, sample.host, state);
 
         // Fire only after for_count consecutive evaluations
         if (!state.firing && state.pendingCount >= rule.for_count) {
           state.firing = true;
           state.alertId = randomUUID();
+          await this.persistState(key, rule, sample.host, state);
           const ts = nowTs();
 
           const message = `${rule.name}: value ${sample.value.toFixed(2)} ${rule.operator} ${rule.threshold} on ${sample.host}`;
@@ -154,7 +187,30 @@ export class Evaluator {
         // Reset pending count once back below threshold
         state.pendingCount = 0;
         state.alertId = randomUUID();
+        await this.persistState(key, rule, sample.host, state);
       }
+    }
+  }
+
+  private async persistState(key: string, rule: AlertRule, host: string, state: FiringState): Promise<void> {
+    try {
+      await axios.put(
+        `${config.backendApi.url}/internal/alert-states/${encodeURIComponent(key)}`,
+        {
+          rule_id: rule.id,
+          rule_name: rule.name,
+          host,
+          alert_id: state.alertId,
+          pending_count: state.pendingCount,
+          firing: state.firing,
+        },
+        {
+          headers: { 'x-internal-key': config.backendApi.internalSecret },
+          timeout: 5000,
+        },
+      );
+    } catch (err) {
+      this.logger.error(`Failed to persist alert state ${key}`, err as Error);
     }
   }
 }

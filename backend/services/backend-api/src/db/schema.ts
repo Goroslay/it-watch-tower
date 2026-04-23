@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS host_registry (
   os_version     TEXT DEFAULT '',
   agent_version  TEXT DEFAULT '',
   detected_services TEXT DEFAULT '[]',
+  allowed_units TEXT NOT NULL DEFAULT '[]',
+  allowed_pm2_processes TEXT NOT NULL DEFAULT '[]',
+  allowed_log_cleanup_paths TEXT NOT NULL DEFAULT '[]',
+  restart_server_enabled INTEGER NOT NULL DEFAULT 0,
   status         TEXT DEFAULT 'online',
   client_id      TEXT REFERENCES clients(id) ON DELETE SET NULL,
   environment_id TEXT REFERENCES environments(id) ON DELETE SET NULL,
@@ -75,5 +79,16 @@ CREATE TABLE IF NOT EXISTS alert_rules (
   notify_slack INTEGER NOT NULL DEFAULT 0,
   notify_email TEXT NOT NULL DEFAULT '',
   created_at   TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS alert_states (
+  state_key     TEXT PRIMARY KEY,
+  rule_id       TEXT NOT NULL,
+  rule_name     TEXT NOT NULL,
+  host          TEXT NOT NULL,
+  alert_id      TEXT NOT NULL,
+  pending_count INTEGER NOT NULL DEFAULT 0,
+  firing        INTEGER NOT NULL DEFAULT 0,
+  updated_at    TEXT DEFAULT (datetime('now'))
 );
 `;

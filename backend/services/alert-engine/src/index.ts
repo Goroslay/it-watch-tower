@@ -26,6 +26,7 @@ async function main(): Promise<void> {
   let loaded = false;
   for (let attempt = 0; attempt < 10 && !loaded; attempt++) {
     await evaluator.loadRules();
+    await evaluator.loadStates();
     loaded = true;
     if (attempt > 0) await sleep(5000);
   }

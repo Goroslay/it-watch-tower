@@ -13,9 +13,11 @@ interface ActionResult {
   executed_at: number;
 }
 
-interface HostRow {
+export interface HostRow {
   client_id: string | null;
   allowed_units: string;
+  allowed_pm2_processes: string;
+  allowed_log_cleanup_paths: string;
   restart_server_enabled: number;
 }
 
@@ -23,11 +25,37 @@ function sanitizeSubject(v: string): string {
   return v.replace(/[. /\\:]/g, '-');
 }
 
+function parseJsonList(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function isActionAllowedForHost(action: string, unit: string, host: HostRow): boolean {
+  switch (action) {
+    case 'start_service':
+    case 'stop_service':
+    case 'restart_service':
+      return unit !== '' && parseJsonList(host.allowed_units).includes(unit);
+    case 'restart_pm2':
+      return unit !== '' && parseJsonList(host.allowed_pm2_processes).includes(unit);
+    case 'log_cleanup':
+      return unit !== '' && parseJsonList(host.allowed_log_cleanup_paths).includes(unit);
+    case 'restart_server':
+      return host.restart_server_enabled === 1;
+    default:
+      return false;
+  }
+}
+
 // GET /api/actions/services/:hostname  — returns allowed units + restart flag for this host
 router.get('/services/:hostname', (req: AuthRequest, res: Response): void => {
   const { hostname } = req.params;
   const host = getDb().prepare(
-    'SELECT client_id, allowed_units, restart_server_enabled FROM host_registry WHERE hostname = ?'
+    'SELECT client_id, allowed_units, allowed_pm2_processes, allowed_log_cleanup_paths, restart_server_enabled FROM host_registry WHERE hostname = ?'
   ).get(hostname) as HostRow | undefined;
 
   if (!host) { res.status(404).json({ error: 'Host not found' }); return; }
@@ -38,10 +66,13 @@ router.get('/services/:hostname', (req: AuthRequest, res: Response): void => {
     return;
   }
 
-  let units: string[] = [];
-  try { units = JSON.parse(host.allowed_units) as string[]; } catch { /* empty */ }
-
-  res.json({ units, restart_server_enabled: host.restart_server_enabled === 1 });
+  res.json({
+    units: parseJsonList(host.allowed_units),
+    pm2_processes: parseJsonList(host.allowed_pm2_processes),
+    log_cleanup_paths: parseJsonList(host.allowed_log_cleanup_paths),
+    restart_server_enabled: host.restart_server_enabled === 1,
+    supported_actions: ['start_service', 'stop_service', 'restart_service', 'restart_pm2', 'log_cleanup', 'restart_server'],
+  });
 });
 
 // POST /api/actions  — execute action on a host via NATS request/reply
@@ -66,13 +97,28 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     return;
   }
 
+  const host = getDb().prepare(`
+    SELECT client_id, allowed_units, allowed_pm2_processes, allowed_log_cleanup_paths, restart_server_enabled
+    FROM host_registry
+    WHERE hostname = ?
+  `).get(hostname) as HostRow | undefined;
+
+  if (!host) {
+    res.status(404).json({ error: 'Host not found' });
+    return;
+  }
+
   // operators can only act on hosts in their client
   if (user.role === 'operator') {
-    const host = getDb().prepare('SELECT client_id FROM host_registry WHERE hostname = ?').get(hostname) as { client_id: string | null } | undefined;
-    if (!host || host.client_id !== user.client_id) {
+    if (host.client_id !== user.client_id) {
       res.status(403).json({ error: 'Host not in your client' });
       return;
     }
+  }
+
+  if (!isActionAllowedForHost(action, unit ?? '', host)) {
+    res.status(403).json({ error: 'Action is not allowed for this host or target' });
+    return;
   }
 
   const nats = getNats();

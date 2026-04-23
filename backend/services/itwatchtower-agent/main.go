@@ -68,6 +68,8 @@ type AgentRegister struct {
 	AgentVersion         string   `json:"agent_version"`
 	DetectedServices     []string `json:"detected_services"`
 	AllowedUnits         []string `json:"allowed_units"`
+	AllowedPM2Processes  []string `json:"allowed_pm2_processes"`
+	AllowedLogPaths      []string `json:"allowed_log_cleanup_paths"`
 	RestartServerEnabled bool     `json:"restart_server_enabled"`
 }
 
@@ -103,6 +105,8 @@ type Agent struct {
 	logOffsets           map[string]int64
 	natsConn             *nats.Conn
 	allowedUnits         []string
+	allowedPM2Processes  []string
+	allowedLogPaths      []string
 	restartServerEnabled bool
 	// extra system metrics
 	diskPaths []string
@@ -167,6 +171,8 @@ func newAgent() *Agent {
 		logTailFromStart:     boolEnv("LOG_TAIL_FROM_START", false),
 		logOffsets:           map[string]int64{},
 		allowedUnits:         splitCSV(os.Getenv("ALLOWED_UNITS")),
+		allowedPM2Processes:  splitCSV(os.Getenv("ALLOWED_PM2_PROCESSES")),
+		allowedLogPaths:      splitCSV(os.Getenv("ALLOWED_LOG_CLEANUP_PATHS")),
 		restartServerEnabled: boolEnv("RESTART_SERVER_ENABLED", false),
 		diskPaths:             splitCSV(os.Getenv("DISK_PATHS")),
 		nginxPaths:            parseNamedPaths(os.Getenv("NGINX_PATHS")),
@@ -294,6 +300,8 @@ func (a *Agent) publishRegister() {
 		AgentVersion:         agentVersion,
 		DetectedServices:     detected,
 		AllowedUnits:         a.allowedUnits,
+		AllowedPM2Processes:  a.allowedPM2Processes,
+		AllowedLogPaths:      a.allowedLogPaths,
 		RestartServerEnabled: a.restartServerEnabled,
 	}
 	payload, err := json.Marshal(reg)
@@ -340,25 +348,14 @@ func (a *Agent) subscribeActions() {
 func (a *Agent) executeAction(req ActionRequest) ActionResult {
 	now := time.Now().UnixMilli()
 	switch req.Action {
-	case "restart_service":
-		if req.Unit == "" {
-			return ActionResult{ID: req.ID, Success: false, Message: "unit name required", ExecutedAt: now}
-		}
-		allowed := false
-		for _, u := range a.allowedUnits {
-			if u == req.Unit {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return ActionResult{ID: req.ID, Success: false, Message: "unit not in whitelist: " + req.Unit, ExecutedAt: now}
-		}
-		out, err := exec.Command("systemctl", "restart", req.Unit).CombinedOutput()
-		if err != nil {
-			return ActionResult{ID: req.ID, Success: false, Message: fmt.Sprintf("systemctl restart %s: %v — %s", req.Unit, err, strings.TrimSpace(string(out))), ExecutedAt: now}
-		}
-		return ActionResult{ID: req.ID, Success: true, Message: req.Unit + " reiniciado correctamente", ExecutedAt: now}
+	case "start_service", "stop_service", "restart_service":
+		return a.executeSystemctlAction(req, now)
+
+	case "restart_pm2":
+		return a.executePM2Restart(req, now)
+
+	case "log_cleanup":
+		return a.executeLogCleanup(req, now)
 
 	case "restart_server":
 		if !a.restartServerEnabled {
@@ -373,6 +370,65 @@ func (a *Agent) executeAction(req ActionRequest) ActionResult {
 	default:
 		return ActionResult{ID: req.ID, Success: false, Message: "acción desconocida: " + req.Action, ExecutedAt: now}
 	}
+}
+
+func (a *Agent) executeSystemctlAction(req ActionRequest, now int64) ActionResult {
+	systemctlVerb := map[string]string{
+		"start_service":   "start",
+		"stop_service":    "stop",
+		"restart_service": "restart",
+	}[req.Action]
+
+	if req.Unit == "" {
+		return ActionResult{ID: req.ID, Success: false, Message: "unit name required", ExecutedAt: now}
+	}
+	if !contains(a.allowedUnits, req.Unit) {
+		return ActionResult{ID: req.ID, Success: false, Message: "unit not in whitelist: " + req.Unit, ExecutedAt: now}
+	}
+
+	out, err := exec.Command("systemctl", systemctlVerb, req.Unit).CombinedOutput()
+	if err != nil {
+		return ActionResult{ID: req.ID, Success: false, Message: fmt.Sprintf("systemctl %s %s: %v — %s", systemctlVerb, req.Unit, err, strings.TrimSpace(string(out))), ExecutedAt: now}
+	}
+	return ActionResult{ID: req.ID, Success: true, Message: fmt.Sprintf("%s ejecutado correctamente sobre %s", systemctlVerb, req.Unit), ExecutedAt: now}
+}
+
+func (a *Agent) executePM2Restart(req ActionRequest, now int64) ActionResult {
+	if req.Unit == "" {
+		return ActionResult{ID: req.ID, Success: false, Message: "pm2 process name required", ExecutedAt: now}
+	}
+	if !contains(a.allowedPM2Processes, req.Unit) {
+		return ActionResult{ID: req.ID, Success: false, Message: "pm2 process not in whitelist: " + req.Unit, ExecutedAt: now}
+	}
+	out, err := exec.Command("pm2", "restart", req.Unit).CombinedOutput()
+	if err != nil {
+		return ActionResult{ID: req.ID, Success: false, Message: fmt.Sprintf("pm2 restart %s: %v — %s", req.Unit, err, strings.TrimSpace(string(out))), ExecutedAt: now}
+	}
+	return ActionResult{ID: req.ID, Success: true, Message: "pm2 process reiniciado correctamente: " + req.Unit, ExecutedAt: now}
+}
+
+func (a *Agent) executeLogCleanup(req ActionRequest, now int64) ActionResult {
+	if req.Unit == "" {
+		return ActionResult{ID: req.ID, Success: false, Message: "log path required", ExecutedAt: now}
+	}
+	if !contains(a.allowedLogPaths, req.Unit) {
+		return ActionResult{ID: req.ID, Success: false, Message: "log path not in whitelist: " + req.Unit, ExecutedAt: now}
+	}
+	file, err := os.OpenFile(req.Unit, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return ActionResult{ID: req.ID, Success: false, Message: "failed to truncate log: " + err.Error(), ExecutedAt: now}
+	}
+	_ = file.Close()
+	return ActionResult{ID: req.ID, Success: true, Message: "log limpiado correctamente: " + req.Unit, ExecutedAt: now}
+}
+
+func contains(values []string, value string) bool {
+	for _, item := range values {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Agent) publishMetrics() {

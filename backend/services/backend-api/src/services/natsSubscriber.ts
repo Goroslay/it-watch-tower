@@ -11,6 +11,8 @@ interface AgentRegister {
   agent_version?: string;
   detected_services?: string[];
   allowed_units?: string[];
+  allowed_pm2_processes?: string[];
+  allowed_log_cleanup_paths?: string[];
   restart_server_enabled?: boolean;
 }
 
@@ -84,10 +86,12 @@ export class NatsSubscriber {
   private upsertHost(data: AgentRegister): void {
     const services = JSON.stringify(data.detected_services ?? []);
     const units = JSON.stringify(data.allowed_units ?? []);
+    const pm2Processes = JSON.stringify(data.allowed_pm2_processes ?? []);
+    const logCleanupPaths = JSON.stringify(data.allowed_log_cleanup_paths ?? []);
     const restartEnabled = data.restart_server_enabled ? 1 : 0;
     getDb().prepare(`
-      INSERT INTO host_registry (hostname, ip_address, platform, arch, os_version, agent_version, detected_services, allowed_units, restart_server_enabled, status, last_seen, first_seen)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'online', datetime('now'), datetime('now'))
+      INSERT INTO host_registry (hostname, ip_address, platform, arch, os_version, agent_version, detected_services, allowed_units, allowed_pm2_processes, allowed_log_cleanup_paths, restart_server_enabled, status, last_seen, first_seen)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'online', datetime('now'), datetime('now'))
       ON CONFLICT(hostname) DO UPDATE SET
         ip_address             = excluded.ip_address,
         platform               = excluded.platform,
@@ -96,6 +100,8 @@ export class NatsSubscriber {
         agent_version          = excluded.agent_version,
         detected_services      = excluded.detected_services,
         allowed_units          = excluded.allowed_units,
+        allowed_pm2_processes  = excluded.allowed_pm2_processes,
+        allowed_log_cleanup_paths = excluded.allowed_log_cleanup_paths,
         restart_server_enabled = excluded.restart_server_enabled,
         status                 = 'online',
         last_seen              = datetime('now')
@@ -108,6 +114,8 @@ export class NatsSubscriber {
       data.agent_version ?? '',
       services,
       units,
+      pm2Processes,
+      logCleanupPaths,
       restartEnabled,
     );
     this.logger.info('Agent registered', { hostname: data.hostname, ip: data.ip_address });

@@ -291,7 +291,10 @@ export async function deleteAlertRule(id: string): Promise<void> {
 
 export interface HostServices {
   units: string[];
+  pm2_processes: string[];
+  log_cleanup_paths: string[];
   restart_server_enabled: boolean;
+  supported_actions: string[];
 }
 
 export interface ActionResult {

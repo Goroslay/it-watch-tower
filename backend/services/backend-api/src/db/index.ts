@@ -21,6 +21,8 @@ export function initDb(path: string): void {
 
 function runMigrations(): void {
   try { db.exec("ALTER TABLE host_registry ADD COLUMN allowed_units TEXT NOT NULL DEFAULT '[]'"); } catch { /* already exists */ }
+  try { db.exec("ALTER TABLE host_registry ADD COLUMN allowed_pm2_processes TEXT NOT NULL DEFAULT '[]'"); } catch { /* already exists */ }
+  try { db.exec("ALTER TABLE host_registry ADD COLUMN allowed_log_cleanup_paths TEXT NOT NULL DEFAULT '[]'"); } catch { /* already exists */ }
   try { db.exec("ALTER TABLE host_registry ADD COLUMN restart_server_enabled INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
 }
 
