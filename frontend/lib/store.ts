@@ -3,6 +3,7 @@ import { create } from 'zustand';
 
 interface AuthState {
   token: string | null;
+  initialized: boolean;
   setToken: (token: string) => void;
   clearToken: () => void;
   init: () => void;
@@ -10,6 +11,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   token: null,
+  initialized: false,
   setToken: (token) => {
     localStorage.setItem('itw_token', token);
     set({ token });
@@ -20,6 +22,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   init: () => {
     const token = localStorage.getItem('itw_token');
-    set({ token });
+    set({ token, initialized: true });
   },
 }));

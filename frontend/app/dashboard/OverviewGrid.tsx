@@ -37,25 +37,29 @@ function toHostMap(series: RawSeries[]): Map<string, number> {
 }
 
 function FilterPills({
-  label, options, value, onChange,
+  label, options, selected, onChange,
 }: {
-  label: string; options: string[]; value: string; onChange: (v: string) => void;
+  label: string; options: string[]; selected: Set<string>; onChange: (v: Set<string>) => void;
 }) {
-  if (options.length < 2) return null;
+  const toggle = (opt: string) => {
+    const next = new Set(selected);
+    next.has(opt) ? next.delete(opt) : next.add(opt);
+    onChange(next);
+  };
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-gray-500 text-xs">{label}:</span>
-      {['', ...options].map((opt) => (
+      <span className="text-gray-500 text-xs w-14 flex-shrink-0">{label}:</span>
+      {options.map((opt) => (
         <button
           key={opt}
-          onClick={() => onChange(opt)}
+          onClick={() => toggle(opt)}
           className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors ${
-            value === opt
+            selected.has(opt)
               ? 'bg-blue-900/50 text-blue-300 border-blue-700/60'
               : 'text-gray-400 border-gray-700/40 hover:border-gray-500/60 hover:text-gray-200'
           }`}
         >
-          {opt || 'Todos'}
+          {opt}
         </button>
       ))}
     </div>
@@ -65,9 +69,9 @@ function FilterPills({
 export default function OverviewGrid({ onSelect }: { onSelect: (info: HostInfo) => void }) {
   const [hosts,       setHosts]       = useState<HostInfo[]>([]);
   const [metrics,     setMetrics]     = useState<Map<string, HostMetrics>>(new Map());
-  const [loading,     setLoading]     = useState(true);
-  const [filterClient, setFilterClient] = useState('');
-  const [filterEnv,    setFilterEnv]    = useState('');
+  const [loading,      setLoading]      = useState(true);
+  const [filterClient, setFilterClient] = useState<Set<string>>(new Set());
+  const [filterEnv,    setFilterEnv]    = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -124,8 +128,8 @@ export default function OverviewGrid({ onSelect }: { onSelect: (info: HostInfo) 
   const uniqueEnvs    = [...new Set(hosts.map((h) => h.env_name).filter(Boolean)    as string[])].sort();
 
   const visible = hosts.filter((h) => {
-    if (filterClient && h.client_name !== filterClient) return false;
-    if (filterEnv    && h.env_name    !== filterEnv)    return false;
+    if (filterClient.size > 0 && !filterClient.has(h.client_name ?? '')) return false;
+    if (filterEnv.size    > 0 && !filterEnv.has(h.env_name       ?? '')) return false;
     return true;
   });
 
@@ -150,24 +154,22 @@ export default function OverviewGrid({ onSelect }: { onSelect: (info: HostInfo) 
         </div>
       </div>
 
-      {/* Filters */}
-      {(uniqueClients.length > 1 || uniqueEnvs.length > 1) && (
-        <div className="bg-gray-800/60 rounded-xl px-4 py-3 space-y-2">
-          <FilterPills label="Cliente" options={uniqueClients} value={filterClient} onChange={setFilterClient} />
-          <FilterPills label="Entorno" options={uniqueEnvs}    value={filterEnv}    onChange={setFilterEnv} />
-        </div>
-      )}
-
-      {/* Count when filtered */}
-      {(filterClient || filterEnv) && (
-        <p className="text-gray-500 text-xs">
-          Mostrando {visible.length} de {hosts.length} hosts
-          {' '}
-          <button onClick={() => { setFilterClient(''); setFilterEnv(''); }} className="text-blue-400 hover:text-blue-300 ml-1">
-            Limpiar filtros
-          </button>
-        </p>
-      )}
+      {/* Filters — siempre visibles */}
+      <div className="bg-gray-800/60 rounded-xl px-4 py-3 space-y-2.5">
+        <FilterPills label="Cliente" options={uniqueClients} selected={filterClient} onChange={setFilterClient} />
+        <FilterPills label="Entorno" options={uniqueEnvs}    selected={filterEnv}    onChange={setFilterEnv} />
+        {(filterClient.size > 0 || filterEnv.size > 0) && (
+          <div className="flex items-center gap-3 pt-0.5">
+            <span className="text-gray-500 text-xs">Mostrando {visible.length} de {hosts.length}</span>
+            <button
+              onClick={() => { setFilterClient(new Set()); setFilterEnv(new Set()); }}
+              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              Limpiar filtros
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Host grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

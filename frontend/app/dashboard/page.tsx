@@ -86,7 +86,7 @@ function SparklineCard({ label, data, color, unit = '%', domain }: {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { token, init, clearToken } = useAuthStore();
+  const { token, initialized, init, clearToken } = useAuthStore();
 
   // Metrics state
   const [selectedHost, setSelectedHost] = useState('');
@@ -120,7 +120,7 @@ export default function DashboardPage() {
   const [selectedHostInfo, setSelectedHostInfo] = useState<HostInfo | null>(null);
 
   useEffect(() => { init(); }, [init]);
-  useEffect(() => { if (!token) router.push('/login'); }, [token, router]);
+  useEffect(() => { if (initialized && !token) router.push('/login'); }, [initialized, token, router]);
 
   // Auth helpers
   const decoded = token ? (() => { try { return jwtDecode<{ role: string }>(token); } catch { return null; } })() : null;
@@ -193,6 +193,22 @@ export default function DashboardPage() {
   const displayedLogs = liveMode ? liveLogs : logs;
   const firingAlerts  = alerts.filter((a) => a.status === 'firing');
 
+  const handleHostSelect = useCallback((info: HostInfo) => {
+    setSelectedHostInfo(info);
+    if (info.hostname === selectedHost) {
+      void refresh();
+    } else {
+      setSelectedHost(info.hostname);
+      setLoading(true);
+    }
+  }, [selectedHost, refresh]);
+
+  const handleBack = () => {
+    setSelectedHost('');
+    setSelectedHostInfo(null);
+    setLoading(false);
+  };
+
   async function handleConfirmAction() {
     if (!confirmAction || !selectedHost) return;
     setActionLoading(true);
@@ -208,7 +224,7 @@ export default function DashboardPage() {
     }
   }
 
-  if (!token) return null;
+  if (!initialized) return null;
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col">
@@ -224,14 +240,23 @@ export default function DashboardPage() {
           </button>
           <h1 className="text-base font-bold text-white tracking-tight">IT Watch Tower</h1>
           {selectedHost && (
-            <span className="text-blue-400 font-mono text-sm bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
-              {selectedHost}
-            </span>
-          )}
-          {selectedHostInfo?.ip_address && (
-            <span className="text-gray-500 font-mono text-xs bg-gray-800 px-2 py-0.5 rounded">
-              {selectedHostInfo.ip_address}
-            </span>
+            <>
+              <button
+                onClick={handleBack}
+                className="text-gray-500 hover:text-white text-xs transition-colors"
+                title="Volver al overview"
+              >
+                ← Todos
+              </button>
+              <span className="text-blue-400 font-mono text-sm bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                {selectedHost}
+              </span>
+              {selectedHostInfo?.ip_address && (
+                <span className="text-gray-500 font-mono text-xs bg-gray-800 px-2 py-0.5 rounded">
+                  {selectedHostInfo.ip_address}
+                </span>
+              )}
+            </>
           )}
         </div>
         <div className="flex items-center gap-4 text-sm text-gray-400">
@@ -244,10 +269,7 @@ export default function DashboardPage() {
 
       {/* Status bar — visible cuando hay host seleccionado, muestra todos los hosts compactos */}
       {selectedHost && (
-        <StatusBar
-          selected={selectedHost}
-          onSelect={(info) => { setSelectedHost(info.hostname); setSelectedHostInfo(info); setLoading(true); }}
-        />
+        <StatusBar selected={selectedHost} onSelect={handleHostSelect} />
       )}
 
       <div className="flex flex-1 overflow-hidden">
@@ -255,19 +277,14 @@ export default function DashboardPage() {
         <aside className={`${sidebarOpen ? 'w-56' : 'w-0'} bg-gray-900 border-r border-gray-800 flex-shrink-0 overflow-hidden transition-all duration-200`}>
           <div className="w-56 py-2">
             <p className="text-gray-600 text-xs px-3 py-1.5 font-semibold uppercase tracking-wider">Hosts</p>
-            <HostTree
-              selected={selectedHost}
-              onSelect={(info) => { setSelectedHost(info.hostname); setSelectedHostInfo(info); setLoading(true); }}
-            />
+            <HostTree selected={selectedHost} onSelect={handleHostSelect} />
           </div>
         </aside>
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto p-5 space-y-5">
           {!selectedHost ? (
-            <OverviewGrid
-              onSelect={(info) => { setSelectedHost(info.hostname); setSelectedHostInfo(info); setLoading(true); }}
-            />
+            <OverviewGrid onSelect={handleHostSelect} />
           ) : (
             <>
               {/* Summary bar */}
