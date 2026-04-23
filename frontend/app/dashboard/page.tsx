@@ -12,6 +12,7 @@ import {
 } from '../../lib/api';
 import ServiceTabs from './ServiceTabs';
 import HostTree from './HostTree';
+import OverviewGrid from './OverviewGrid';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3003';
 const MAX_LIVE_LOGS = 200;
@@ -255,9 +256,9 @@ export default function DashboardPage() {
         {/* Main content */}
         <main className="flex-1 overflow-y-auto p-5 space-y-5">
           {!selectedHost ? (
-            <div className="flex items-center justify-center h-64 text-gray-500">
-              Selecciona un host del panel izquierdo
-            </div>
+            <OverviewGrid
+              onSelect={(info) => { setSelectedHost(info.hostname); setSelectedHostInfo(info); setLoading(true); }}
+            />
           ) : (
             <>
               {/* Summary bar */}
