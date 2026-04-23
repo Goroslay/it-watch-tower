@@ -13,6 +13,7 @@ import {
 import ServiceTabs from './ServiceTabs';
 import HostTree from './HostTree';
 import OverviewGrid from './OverviewGrid';
+import StatusBar from './StatusBar';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3003';
 const MAX_LIVE_LOGS = 200;
@@ -240,6 +241,14 @@ export default function DashboardPage() {
           <button onClick={() => { clearToken(); router.push('/login'); }} className="text-gray-500 hover:text-white transition text-xs">Salir</button>
         </div>
       </header>
+
+      {/* Status bar — visible cuando hay host seleccionado, muestra todos los hosts compactos */}
+      {selectedHost && (
+        <StatusBar
+          selected={selectedHost}
+          onSelect={(info) => { setSelectedHost(info.hostname); setSelectedHostInfo(info); setLoading(true); }}
+        />
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar — host tree */}

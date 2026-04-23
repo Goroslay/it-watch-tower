@@ -36,10 +36,38 @@ function toHostMap(series: RawSeries[]): Map<string, number> {
   return new Map(series.map((s) => [s.metric['host'] ?? '', s.value]));
 }
 
+function FilterPills({
+  label, options, value, onChange,
+}: {
+  label: string; options: string[]; value: string; onChange: (v: string) => void;
+}) {
+  if (options.length < 2) return null;
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-gray-500 text-xs">{label}:</span>
+      {['', ...options].map((opt) => (
+        <button
+          key={opt}
+          onClick={() => onChange(opt)}
+          className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors ${
+            value === opt
+              ? 'bg-blue-900/50 text-blue-300 border-blue-700/60'
+              : 'text-gray-400 border-gray-700/40 hover:border-gray-500/60 hover:text-gray-200'
+          }`}
+        >
+          {opt || 'Todos'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function OverviewGrid({ onSelect }: { onSelect: (info: HostInfo) => void }) {
-  const [hosts,   setHosts]   = useState<HostInfo[]>([]);
-  const [metrics, setMetrics] = useState<Map<string, HostMetrics>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const [hosts,       setHosts]       = useState<HostInfo[]>([]);
+  const [metrics,     setMetrics]     = useState<Map<string, HostMetrics>>(new Map());
+  const [loading,     setLoading]     = useState(true);
+  const [filterClient, setFilterClient] = useState('');
+  const [filterEnv,    setFilterEnv]    = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -59,9 +87,7 @@ export default function OverviewGrid({ onSelect }: { onSelect: (info: HostInfo) 
 
       const alertsByHost = new Map<string, number>();
       for (const a of alerts) {
-        if (a.status === 'firing') {
-          alertsByHost.set(a.host, (alertsByHost.get(a.host) ?? 0) + 1);
-        }
+        if (a.status === 'firing') alertsByHost.set(a.host, (alertsByHost.get(a.host) ?? 0) + 1);
       }
 
       const m = new Map<string, HostMetrics>();
@@ -90,16 +116,24 @@ export default function OverviewGrid({ onSelect }: { onSelect: (info: HostInfo) 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-gray-500 text-sm">Cargando hosts...</div>;
   }
-
   if (hosts.length === 0) {
     return <div className="flex items-center justify-center h-64 text-gray-500 text-sm">Sin hosts registrados</div>;
   }
+
+  const uniqueClients = [...new Set(hosts.map((h) => h.client_name).filter(Boolean) as string[])].sort();
+  const uniqueEnvs    = [...new Set(hosts.map((h) => h.env_name).filter(Boolean)    as string[])].sort();
+
+  const visible = hosts.filter((h) => {
+    if (filterClient && h.client_name !== filterClient) return false;
+    if (filterEnv    && h.env_name    !== filterEnv)    return false;
+    return true;
+  });
 
   const online      = hosts.filter((h) => h.status === 'online').length;
   const totalAlerts = Array.from(metrics.values()).reduce((acc, m) => acc + m.alerts, 0);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Summary bar */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-gray-800 rounded-xl p-4 text-center">
@@ -116,9 +150,28 @@ export default function OverviewGrid({ onSelect }: { onSelect: (info: HostInfo) 
         </div>
       </div>
 
+      {/* Filters */}
+      {(uniqueClients.length > 1 || uniqueEnvs.length > 1) && (
+        <div className="bg-gray-800/60 rounded-xl px-4 py-3 space-y-2">
+          <FilterPills label="Cliente" options={uniqueClients} value={filterClient} onChange={setFilterClient} />
+          <FilterPills label="Entorno" options={uniqueEnvs}    value={filterEnv}    onChange={setFilterEnv} />
+        </div>
+      )}
+
+      {/* Count when filtered */}
+      {(filterClient || filterEnv) && (
+        <p className="text-gray-500 text-xs">
+          Mostrando {visible.length} de {hosts.length} hosts
+          {' '}
+          <button onClick={() => { setFilterClient(''); setFilterEnv(''); }} className="text-blue-400 hover:text-blue-300 ml-1">
+            Limpiar filtros
+          </button>
+        </p>
+      )}
+
       {/* Host grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {hosts.map((h) => {
+        {visible.map((h) => {
           const m        = metrics.get(h.hostname);
           const isOnline = h.status === 'online';
           const hasAlert = (m?.alerts ?? 0) > 0;
@@ -134,7 +187,6 @@ export default function OverviewGrid({ onSelect }: { onSelect: (info: HostInfo) 
                   : 'border-gray-700/20 opacity-60'
               }`}
             >
-              {/* Host header */}
               <div className="flex items-start justify-between mb-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
@@ -157,7 +209,6 @@ export default function OverviewGrid({ onSelect }: { onSelect: (info: HostInfo) 
                 )}
               </div>
 
-              {/* Metrics or offline info */}
               {isOnline ? (
                 <div className="space-y-2">
                   <GaugeMini label="CPU"  value={m?.cpu  ?? null} color="bg-blue-500" />
