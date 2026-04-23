@@ -66,13 +66,34 @@ router.get('/services/:hostname', (req: AuthRequest, res: Response): void => {
     return;
   }
 
-  res.json({
-    units: parseJsonList(host.allowed_units),
-    pm2_processes: parseJsonList(host.allowed_pm2_processes),
-    log_cleanup_paths: parseJsonList(host.allowed_log_cleanup_paths),
-    restart_server_enabled: host.restart_server_enabled === 1,
-    supported_actions: ['start_service', 'stop_service', 'restart_service', 'restart_pm2', 'log_cleanup', 'restart_server'],
-  });
+  // Prefer web-managed config; fall back to host_registry (env-based)
+  const agentCfgRow = getDb()
+    .prepare('SELECT config_json FROM agent_configs WHERE hostname = ?')
+    .get(hostname) as { config_json: string } | undefined;
+
+  if (agentCfgRow) {
+    const cfg = JSON.parse(agentCfgRow.config_json) as {
+      allowed_units?: string[];
+      allowed_pm2_processes?: string[];
+      allowed_log_cleanup_paths?: string[];
+      restart_server_enabled?: boolean;
+    };
+    res.json({
+      units:                   cfg.allowed_units           ?? [],
+      pm2_processes:           cfg.allowed_pm2_processes   ?? [],
+      log_cleanup_paths:       cfg.allowed_log_cleanup_paths ?? [],
+      restart_server_enabled:  cfg.restart_server_enabled  ?? false,
+      supported_actions: ['start_service', 'stop_service', 'restart_service', 'restart_pm2', 'log_cleanup', 'restart_server'],
+    });
+  } else {
+    res.json({
+      units:                  parseJsonList(host.allowed_units),
+      pm2_processes:          parseJsonList(host.allowed_pm2_processes),
+      log_cleanup_paths:      parseJsonList(host.allowed_log_cleanup_paths),
+      restart_server_enabled: host.restart_server_enabled === 1,
+      supported_actions: ['start_service', 'stop_service', 'restart_service', 'restart_pm2', 'log_cleanup', 'restart_server'],
+    });
+  }
 });
 
 // POST /api/actions  — execute action on a host via NATS request/reply

@@ -18,6 +18,7 @@ import environmentsRouter from './routes/admin/environments';
 import usersRouter from './routes/admin/users';
 import hostsAdminRouter from './routes/admin/hosts';
 import alertRulesRouter from './routes/admin/alertRules';
+import agentConfigRouter from './routes/admin/agentConfig';
 import internalRouter from './routes/internal';
 import sseRouter from './routes/sse';
 
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
   app.use('/admin/users',        authMiddleware, adminOnly, usersRouter);
   app.use('/admin/hosts',        authMiddleware, adminOnly, hostsAdminRouter);
   app.use('/admin/alert-rules',  authMiddleware, adminOnly, alertRulesRouter);
+  app.use('/admin/agent-config', authMiddleware, adminOnly, agentConfigRouter);
 
   // Internal — alert engine only (X-Internal-Key)
   app.use('/internal', internalRouter);

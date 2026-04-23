@@ -91,4 +91,10 @@ CREATE TABLE IF NOT EXISTS alert_states (
   firing        INTEGER NOT NULL DEFAULT 0,
   updated_at    TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS agent_configs (
+  hostname    TEXT PRIMARY KEY,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  updated_at  TEXT DEFAULT (datetime('now'))
+);
 `;

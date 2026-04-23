@@ -333,3 +333,56 @@ export async function fetchAudit(host?: string): Promise<AuditEntry[]> {
   const data = await request<{ audit: AuditEntry[] }>(`/api/audit${q}`);
   return data.audit;
 }
+
+// ── Agent config ───────────────────────────────────────────────────────────────
+
+export interface ServiceEntry {
+  name:             string;
+  path:             string;
+  log_path?:        string;
+  access_log_path?: string;
+}
+
+export interface AgentConfig {
+  disk_paths:               string[];
+  log_paths:                string[];
+  nginx:                    ServiceEntry[];
+  tomcat:                   ServiceEntry[];
+  wildfly:                  ServiceEntry[];
+  pm2_enabled:              boolean;
+  pm2_logs:                 Array<{ name: string; path: string }>;
+  oracle_enabled:           boolean;
+  oracle_dsn:               string;
+  allowed_units:            string[];
+  allowed_pm2_processes:    string[];
+  allowed_log_cleanup_paths: string[];
+  restart_server_enabled:   boolean;
+}
+
+export const DEFAULT_AGENT_CONFIG: AgentConfig = {
+  disk_paths:               [],
+  log_paths:                [],
+  nginx:                    [],
+  tomcat:                   [],
+  wildfly:                  [],
+  pm2_enabled:              false,
+  pm2_logs:                 [],
+  oracle_enabled:           false,
+  oracle_dsn:               '',
+  allowed_units:            [],
+  allowed_pm2_processes:    [],
+  allowed_log_cleanup_paths: [],
+  restart_server_enabled:   false,
+};
+
+export async function fetchAgentConfig(hostname: string): Promise<AgentConfig> {
+  const data = await request<{ config: AgentConfig }>(`/admin/agent-config/${encodeURIComponent(hostname)}`);
+  return { ...DEFAULT_AGENT_CONFIG, ...data.config };
+}
+
+export async function saveAgentConfig(hostname: string, config: AgentConfig): Promise<void> {
+  await request(`/admin/agent-config/${encodeURIComponent(hostname)}`, {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+}

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -92,6 +93,30 @@ type ActionResult struct {
 	ExecutedAt int64  `json:"executed_at"`
 }
 
+// RemoteConfig is pushed by the backend to update agent behavior at runtime.
+type RemoteConfig struct {
+	DiskPaths             []string       `json:"disk_paths"`
+	LogPaths              []string       `json:"log_paths"`
+	Nginx                 []ServiceEntry `json:"nginx"`
+	Tomcat                []ServiceEntry `json:"tomcat"`
+	Wildfly               []ServiceEntry `json:"wildfly"`
+	PM2Enabled            bool           `json:"pm2_enabled"`
+	PM2Logs               []ServiceEntry `json:"pm2_logs"`
+	OracleEnabled         bool           `json:"oracle_enabled"`
+	OracleDSN             string         `json:"oracle_dsn"`
+	AllowedUnits          []string       `json:"allowed_units"`
+	AllowedPM2Processes   []string       `json:"allowed_pm2_processes"`
+	AllowedLogPaths       []string       `json:"allowed_log_cleanup_paths"`
+	RestartServerEnabled  bool           `json:"restart_server_enabled"`
+}
+
+type ServiceEntry struct {
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	LogPath       string `json:"log_path"`
+	AccessLogPath string `json:"access_log_path"`
+}
+
 type Agent struct {
 	name                 string
 	hostname             string
@@ -104,6 +129,8 @@ type Agent struct {
 	logTailFromStart     bool
 	logOffsets           map[string]int64
 	natsConn             *nats.Conn
+	configCh             chan RemoteConfig
+	mu                   sync.RWMutex // protects fields accessed from action callbacks
 	allowedUnits         []string
 	allowedPM2Processes  []string
 	allowedLogPaths      []string
@@ -147,6 +174,7 @@ func main() {
 	log.Printf("IT Watch Tower Agent started name=%s host=%s nats=%s version=%s", agent.name, agent.hostname, agent.natsURL, agentVersion)
 	agent.publishRegister()
 	agent.subscribeActions()
+	agent.subscribeConfig()
 	agent.run(ctx)
 	log.Println("Agent shutting down")
 }
@@ -170,6 +198,7 @@ func newAgent() *Agent {
 		logPaths:             splitCSV(os.Getenv("LOG_PATHS")),
 		logTailFromStart:     boolEnv("LOG_TAIL_FROM_START", false),
 		logOffsets:           map[string]int64{},
+		configCh:             make(chan RemoteConfig, 1),
 		allowedUnits:         splitCSV(os.Getenv("ALLOWED_UNITS")),
 		allowedPM2Processes:  splitCSV(os.Getenv("ALLOWED_PM2_PROCESSES")),
 		allowedLogPaths:      splitCSV(os.Getenv("ALLOWED_LOG_CLEANUP_PATHS")),
@@ -231,6 +260,8 @@ func (a *Agent) run(ctx context.Context) {
 			a.publishAgentLog("INFO", "agent stopped")
 			a.natsConn.FlushTimeout(2 * time.Second)
 			return
+		case cfg := <-a.configCh:
+			a.applyConfig(cfg)
 		case <-metricsTicker.C:
 			a.publishMetrics()
 		case <-logsTicker.C:
@@ -345,73 +376,156 @@ func (a *Agent) subscribeActions() {
 	}
 }
 
+func (a *Agent) subscribeConfig() {
+	subject := "config." + sanitizeSubjectToken(a.hostname)
+	if _, err := a.natsConn.Subscribe(subject, func(msg *nats.Msg) {
+		var cfg RemoteConfig
+		if err := json.Unmarshal(msg.Data, &cfg); err != nil {
+			log.Printf("failed to parse remote config: %v", err)
+			return
+		}
+		select {
+		case a.configCh <- cfg:
+		default:
+			<-a.configCh
+			a.configCh <- cfg
+		}
+	}); err != nil {
+		log.Printf("failed to subscribe to config: %v", err)
+	}
+}
+
+func entriesToPaths(entries []ServiceEntry) []NamedPath {
+	var r []NamedPath
+	for _, e := range entries {
+		if e.Name != "" && e.Path != "" {
+			r = append(r, NamedPath{Name: e.Name, Path: e.Path})
+		}
+	}
+	return r
+}
+
+func entriesToLogPaths(entries []ServiceEntry) []NamedPath {
+	var r []NamedPath
+	for _, e := range entries {
+		if e.Name != "" && e.LogPath != "" {
+			r = append(r, NamedPath{Name: e.Name, Path: e.LogPath})
+		}
+	}
+	return r
+}
+
+func entriesToAccessLogPaths(entries []ServiceEntry) []NamedPath {
+	var r []NamedPath
+	for _, e := range entries {
+		if e.Name != "" && e.AccessLogPath != "" {
+			r = append(r, NamedPath{Name: e.Name, Path: e.AccessLogPath})
+		}
+	}
+	return r
+}
+
+func (a *Agent) applyConfig(cfg RemoteConfig) {
+	if cfg.DiskPaths != nil {
+		a.diskPaths = cfg.DiskPaths
+	}
+	if cfg.LogPaths != nil {
+		a.logPaths = cfg.LogPaths
+	}
+	a.nginxPaths = entriesToPaths(cfg.Nginx)
+	a.nginxLogPaths = entriesToLogPaths(cfg.Nginx)
+	a.nginxAccessLogPaths = entriesToAccessLogPaths(cfg.Nginx)
+	a.tomcatPaths = entriesToPaths(cfg.Tomcat)
+	a.tomcatLogPaths = entriesToLogPaths(cfg.Tomcat)
+	a.tomcatAccessLogPaths = entriesToAccessLogPaths(cfg.Tomcat)
+	a.wildflyPaths = entriesToPaths(cfg.Wildfly)
+	a.wildflyLogPaths = entriesToLogPaths(cfg.Wildfly)
+	a.wildflyAccessLogPaths = entriesToAccessLogPaths(cfg.Wildfly)
+	a.pm2Enabled = cfg.PM2Enabled
+	a.pm2LogPaths = entriesToLogPaths(cfg.PM2Logs)
+	a.oracleEnabled = cfg.OracleEnabled
+	if cfg.OracleDSN != "" {
+		a.oracleDSN = cfg.OracleDSN
+	}
+
+	a.mu.Lock()
+	a.allowedUnits = cfg.AllowedUnits
+	a.allowedPM2Processes = cfg.AllowedPM2Processes
+	a.allowedLogPaths = cfg.AllowedLogPaths
+	a.restartServerEnabled = cfg.RestartServerEnabled
+	a.mu.Unlock()
+
+	log.Printf("Remote config applied: nginx=%d tomcat=%d wildfly=%d pm2=%v oracle=%v units=%d",
+		len(a.nginxPaths), len(a.tomcatPaths), len(a.wildflyPaths),
+		a.pm2Enabled, a.oracleEnabled, len(a.allowedUnits))
+}
+
 func (a *Agent) executeAction(req ActionRequest) ActionResult {
 	now := time.Now().UnixMilli()
+
+	// Snapshot action config under read lock (written by applyConfig)
+	a.mu.RLock()
+	allowedUnits := a.allowedUnits
+	allowedPM2 := a.allowedPM2Processes
+	allowedLogPaths := a.allowedLogPaths
+	restartEnabled := a.restartServerEnabled
+	a.mu.RUnlock()
+
 	switch req.Action {
 	case "start_service", "stop_service", "restart_service":
-		return a.executeSystemctlAction(req, now)
-
+		return executeSystemctlAction(req, allowedUnits, now)
 	case "restart_pm2":
-		return a.executePM2Restart(req, now)
-
+		return executePM2Restart(req, allowedPM2, now)
 	case "log_cleanup":
-		return a.executeLogCleanup(req, now)
-
+		return executeLogCleanup(req, allowedLogPaths, now)
 	case "restart_server":
-		if !a.restartServerEnabled {
-			return ActionResult{ID: req.ID, Success: false, Message: "reinicio de servidor no habilitado en este agente (RESTART_SERVER_ENABLED=false)", ExecutedAt: now}
+		if !restartEnabled {
+			return ActionResult{ID: req.ID, Success: false, Message: "reinicio de servidor no habilitado", ExecutedAt: now}
 		}
 		go func() {
 			time.Sleep(3 * time.Second)
 			_ = exec.Command("shutdown", "-r", "now").Run()
 		}()
 		return ActionResult{ID: req.ID, Success: true, Message: "reinicio del servidor programado en 3s", ExecutedAt: now}
-
 	default:
 		return ActionResult{ID: req.ID, Success: false, Message: "acción desconocida: " + req.Action, ExecutedAt: now}
 	}
 }
 
-func (a *Agent) executeSystemctlAction(req ActionRequest, now int64) ActionResult {
-	systemctlVerb := map[string]string{
-		"start_service":   "start",
-		"stop_service":    "stop",
-		"restart_service": "restart",
-	}[req.Action]
-
+func executeSystemctlAction(req ActionRequest, allowedUnits []string, now int64) ActionResult {
+	verb := map[string]string{"start_service": "start", "stop_service": "stop", "restart_service": "restart"}[req.Action]
 	if req.Unit == "" {
 		return ActionResult{ID: req.ID, Success: false, Message: "unit name required", ExecutedAt: now}
 	}
-	if !contains(a.allowedUnits, req.Unit) {
+	if !contains(allowedUnits, req.Unit) {
 		return ActionResult{ID: req.ID, Success: false, Message: "unit not in whitelist: " + req.Unit, ExecutedAt: now}
 	}
-
-	out, err := exec.Command("systemctl", systemctlVerb, req.Unit).CombinedOutput()
+	out, err := exec.Command("systemctl", verb, req.Unit).CombinedOutput()
 	if err != nil {
-		return ActionResult{ID: req.ID, Success: false, Message: fmt.Sprintf("systemctl %s %s: %v — %s", systemctlVerb, req.Unit, err, strings.TrimSpace(string(out))), ExecutedAt: now}
+		return ActionResult{ID: req.ID, Success: false, Message: fmt.Sprintf("systemctl %s %s: %v — %s", verb, req.Unit, err, strings.TrimSpace(string(out))), ExecutedAt: now}
 	}
-	return ActionResult{ID: req.ID, Success: true, Message: fmt.Sprintf("%s ejecutado correctamente sobre %s", systemctlVerb, req.Unit), ExecutedAt: now}
+	return ActionResult{ID: req.ID, Success: true, Message: fmt.Sprintf("%s ejecutado correctamente sobre %s", verb, req.Unit), ExecutedAt: now}
 }
 
-func (a *Agent) executePM2Restart(req ActionRequest, now int64) ActionResult {
+func executePM2Restart(req ActionRequest, allowed []string, now int64) ActionResult {
 	if req.Unit == "" {
 		return ActionResult{ID: req.ID, Success: false, Message: "pm2 process name required", ExecutedAt: now}
 	}
-	if !contains(a.allowedPM2Processes, req.Unit) {
+	if !contains(allowed, req.Unit) {
 		return ActionResult{ID: req.ID, Success: false, Message: "pm2 process not in whitelist: " + req.Unit, ExecutedAt: now}
 	}
 	out, err := exec.Command("pm2", "restart", req.Unit).CombinedOutput()
 	if err != nil {
 		return ActionResult{ID: req.ID, Success: false, Message: fmt.Sprintf("pm2 restart %s: %v — %s", req.Unit, err, strings.TrimSpace(string(out))), ExecutedAt: now}
 	}
-	return ActionResult{ID: req.ID, Success: true, Message: "pm2 process reiniciado correctamente: " + req.Unit, ExecutedAt: now}
+	return ActionResult{ID: req.ID, Success: true, Message: "pm2 process reiniciado: " + req.Unit, ExecutedAt: now}
 }
 
-func (a *Agent) executeLogCleanup(req ActionRequest, now int64) ActionResult {
+func executeLogCleanup(req ActionRequest, allowed []string, now int64) ActionResult {
 	if req.Unit == "" {
 		return ActionResult{ID: req.ID, Success: false, Message: "log path required", ExecutedAt: now}
 	}
-	if !contains(a.allowedLogPaths, req.Unit) {
+	if !contains(allowed, req.Unit) {
 		return ActionResult{ID: req.ID, Success: false, Message: "log path not in whitelist: " + req.Unit, ExecutedAt: now}
 	}
 	file, err := os.OpenFile(req.Unit, os.O_WRONLY|os.O_TRUNC, 0)
@@ -419,7 +533,7 @@ func (a *Agent) executeLogCleanup(req ActionRequest, now int64) ActionResult {
 		return ActionResult{ID: req.ID, Success: false, Message: "failed to truncate log: " + err.Error(), ExecutedAt: now}
 	}
 	_ = file.Close()
-	return ActionResult{ID: req.ID, Success: true, Message: "log limpiado correctamente: " + req.Unit, ExecutedAt: now}
+	return ActionResult{ID: req.ID, Success: true, Message: "log limpiado: " + req.Unit, ExecutedAt: now}
 }
 
 func contains(values []string, value string) bool {

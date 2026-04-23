@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import useSWR, { mutate } from 'swr';
 import {
   fetchAdminHosts, fetchClients, fetchEnvironments, assignHost, unassignHost,
@@ -92,6 +93,12 @@ export default function HostsPage() {
                   {new Date(h.last_seen).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}
                 </td>
                 <td className="py-2 text-right space-x-3">
+                  <Link
+                    href={`/admin/hosts/${encodeURIComponent(h.hostname)}/config`}
+                    className="text-purple-400 hover:text-purple-300 text-xs transition-colors"
+                  >
+                    Configurar
+                  </Link>
                   <button
                     onClick={() => { setAssigningHost(h.hostname); setSelClient(''); setSelEnv(''); }}
                     className="text-blue-400 hover:text-blue-300 text-xs transition-colors"

@@ -45,6 +45,11 @@ export class NatsSubscriber {
     return this.conn.request(subject, this.codec.encode(JSON.stringify(payload)), { timeout: timeoutMs });
   }
 
+  publish(subject: string, payload: unknown): void {
+    if (!this.conn) return;
+    this.conn.publish(subject, this.codec.encode(JSON.stringify(payload)));
+  }
+
   decodeMsg(msg: Msg): unknown {
     return JSON.parse(this.codec.decode(msg.data));
   }
@@ -119,6 +124,17 @@ export class NatsSubscriber {
       restartEnabled,
     );
     this.logger.info('Agent registered', { hostname: data.hostname, ip: data.ip_address });
+    this.pushStoredConfig(data.hostname);
+  }
+
+  private pushStoredConfig(hostname: string): void {
+    try {
+      const { getAgentConfig, pushConfigToAgent } = require('../routes/admin/agentConfig') as typeof import('../routes/admin/agentConfig');
+      const config = getAgentConfig(hostname);
+      pushConfigToAgent(hostname, config);
+    } catch {
+      // silently ignore if config not set
+    }
   }
 
   subscribe(subject: string): Subscription {
