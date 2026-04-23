@@ -8,7 +8,7 @@ import { useAuthStore } from '../../lib/store';
 import {
   fetchCurrentMetric, fetchMetricRange, fetchLogs, fetchAlerts,
   fetchHostServices, executeAction,
-  MetricPoint, LogEntry, AlertEntry, HostServices,
+  MetricPoint, LogEntry, AlertEntry, HostServices, HostInfo,
 } from '../../lib/api';
 import ServiceTabs from './ServiceTabs';
 import HostTree from './HostTree';
@@ -114,6 +114,8 @@ export default function DashboardPage() {
   const [confirmAction, setConfirmAction] = useState<{ action: string; unit?: string } | null>(null);
   const [actionResult,  setActionResult]  = useState<{ success: boolean; message: string } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [selectedHostInfo, setSelectedHostInfo] = useState<HostInfo | null>(null);
 
   useEffect(() => { init(); }, [init]);
   useEffect(() => { if (!token) router.push('/login'); }, [token, router]);
@@ -211,10 +213,22 @@ export default function DashboardPage() {
       {/* Header */}
       <header className="bg-gray-900 border-b border-gray-800 px-4 py-2.5 flex items-center justify-between flex-shrink-0 z-10">
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSidebarOpen((v) => !v)}
+            title={sidebarOpen ? 'Ocultar sidebar' : 'Mostrar sidebar'}
+            className="text-gray-500 hover:text-white transition-colors text-xs px-1.5 py-0.5 rounded hover:bg-gray-700/50"
+          >
+            {sidebarOpen ? '◀' : '▶'}
+          </button>
           <h1 className="text-base font-bold text-white tracking-tight">IT Watch Tower</h1>
           {selectedHost && (
             <span className="text-blue-400 font-mono text-sm bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
               {selectedHost}
+            </span>
+          )}
+          {selectedHostInfo?.ip_address && (
+            <span className="text-gray-500 font-mono text-xs bg-gray-800 px-2 py-0.5 rounded">
+              {selectedHostInfo.ip_address}
             </span>
           )}
         </div>
@@ -228,9 +242,14 @@ export default function DashboardPage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar — host tree */}
-        <aside className="w-56 bg-gray-900 border-r border-gray-800 flex-shrink-0 overflow-y-auto py-2">
-          <p className="text-gray-600 text-xs px-3 py-1.5 font-semibold uppercase tracking-wider">Hosts</p>
-          <HostTree selected={selectedHost} onSelect={(h) => { setSelectedHost(h); setLoading(true); }} />
+        <aside className={`${sidebarOpen ? 'w-56' : 'w-0'} bg-gray-900 border-r border-gray-800 flex-shrink-0 overflow-hidden transition-all duration-200`}>
+          <div className="w-56 py-2">
+            <p className="text-gray-600 text-xs px-3 py-1.5 font-semibold uppercase tracking-wider">Hosts</p>
+            <HostTree
+              selected={selectedHost}
+              onSelect={(info) => { setSelectedHost(info.hostname); setSelectedHostInfo(info); setLoading(true); }}
+            />
+          </div>
         </aside>
 
         {/* Main content */}
@@ -420,47 +439,78 @@ export default function DashboardPage() {
                           <button onClick={() => setActionResult(null)} className="ml-4 text-xs opacity-60 hover:opacity-100">✕</button>
                         </div>
                       )}
-                      <div className="flex flex-wrap gap-3">
-                        {services.units.map((unit) => (
-                          <div key={unit} className="flex overflow-hidden rounded-lg border border-yellow-700/50">
-                            <button
-                              onClick={() => setConfirmAction({ action: 'start_service', unit })}
-                              className="bg-green-800/40 hover:bg-green-700/50 text-green-200 text-sm px-3 py-2 transition-colors border-r border-yellow-700/50">
-                              Iniciar
-                            </button>
-                            <button
-                              onClick={() => setConfirmAction({ action: 'restart_service', unit })}
-                              className="bg-yellow-700/40 hover:bg-yellow-600/50 text-yellow-200 text-sm px-3 py-2 transition-colors border-r border-yellow-700/50">
-                              {unit}
-                            </button>
-                            <button
-                              onClick={() => setConfirmAction({ action: 'stop_service', unit })}
-                              className="bg-red-800/40 hover:bg-red-700/50 text-red-200 text-sm px-3 py-2 transition-colors">
-                              Detener
-                            </button>
+
+                      {/* Systemd services */}
+                      {services.units.length > 0 && (
+                        <div className="mb-4">
+                          <p className="text-gray-500 text-xs uppercase tracking-wider mb-2">Systemd</p>
+                          <div className="space-y-1.5">
+                            {services.units.map((unit) => (
+                              <div key={unit} className="flex items-center gap-2 bg-gray-900/60 rounded-lg px-3 py-2">
+                                <span className="text-gray-300 text-xs font-mono flex-1 truncate">{unit}</span>
+                                <button
+                                  onClick={() => setConfirmAction({ action: 'start_service', unit })}
+                                  className="text-xs px-2.5 py-1 rounded bg-green-900/50 hover:bg-green-800/70 text-green-300 border border-green-800/50 transition-colors whitespace-nowrap">
+                                  ▶ Iniciar
+                                </button>
+                                <button
+                                  onClick={() => setConfirmAction({ action: 'restart_service', unit })}
+                                  className="text-xs px-2.5 py-1 rounded bg-yellow-900/50 hover:bg-yellow-800/70 text-yellow-300 border border-yellow-800/50 transition-colors whitespace-nowrap">
+                                  ↺ Reiniciar
+                                </button>
+                                <button
+                                  onClick={() => setConfirmAction({ action: 'stop_service', unit })}
+                                  className="text-xs px-2.5 py-1 rounded bg-red-900/50 hover:bg-red-800/70 text-red-300 border border-red-800/50 transition-colors whitespace-nowrap">
+                                  ■ Detener
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                        {services.pm2_processes.map((processName) => (
-                          <button key={`pm2-${processName}`}
-                            onClick={() => setConfirmAction({ action: 'restart_pm2', unit: processName })}
-                            className="bg-blue-800/40 hover:bg-blue-700/50 text-blue-200 text-sm px-4 py-2 rounded-lg transition-colors border border-blue-700/50">
-                            Reiniciar PM2 {processName}
-                          </button>
-                        ))}
-                        {services.log_cleanup_paths.map((path) => (
-                          <button key={`log-${path}`}
-                            onClick={() => setConfirmAction({ action: 'log_cleanup', unit: path })}
-                            className="bg-purple-800/40 hover:bg-purple-700/50 text-purple-200 text-sm px-4 py-2 rounded-lg transition-colors border border-purple-700/50">
-                            Limpiar {path.split('/').pop() || path}
-                          </button>
-                        ))}
-                        {isAdmin && services.restart_server_enabled && (
+                        </div>
+                      )}
+
+                      {/* PM2 processes */}
+                      {services.pm2_processes.length > 0 && (
+                        <div className="mb-4">
+                          <p className="text-gray-500 text-xs uppercase tracking-wider mb-2">PM2</p>
+                          <div className="flex flex-wrap gap-2">
+                            {services.pm2_processes.map((processName) => (
+                              <button key={processName}
+                                onClick={() => setConfirmAction({ action: 'restart_pm2', unit: processName })}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-blue-900/40 hover:bg-blue-800/60 text-blue-300 border border-blue-800/50 transition-colors">
+                                ↺ {processName}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Log cleanup */}
+                      {services.log_cleanup_paths.length > 0 && (
+                        <div className="mb-4">
+                          <p className="text-gray-500 text-xs uppercase tracking-wider mb-2">Limpieza</p>
+                          <div className="flex flex-wrap gap-2">
+                            {services.log_cleanup_paths.map((path) => (
+                              <button key={path}
+                                onClick={() => setConfirmAction({ action: 'log_cleanup', unit: path })}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 border border-purple-800/50 transition-colors">
+                                🗑 {path.split('/').pop() || path}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Server restart */}
+                      {isAdmin && services.restart_server_enabled && (
+                        <div>
+                          <p className="text-gray-500 text-xs uppercase tracking-wider mb-2">Servidor</p>
                           <button onClick={() => setConfirmAction({ action: 'restart_server' })}
-                            className="bg-red-800/40 hover:bg-red-700/50 text-red-300 text-sm px-4 py-2 rounded-lg transition-colors border border-red-700/50">
-                            Reiniciar servidor
+                            className="text-xs px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-800/50 transition-colors">
+                            ⚡ Reiniciar servidor
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </>

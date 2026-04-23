@@ -109,23 +109,34 @@ function SistemaTab({ host }: { host: string }) {
       )}
       {Object.keys(diskMap).length > 0 && (
         <div>
-          <p className="text-gray-400 text-xs mb-2 uppercase tracking-wide">Disk I/O (tasa)</p>
-          <table className="w-full text-sm">
-            <thead><tr className="text-gray-400 border-b border-gray-700">
-              <th className="text-left py-1 pr-4">Disco</th>
-              <th className="text-right py-1 pr-4">Lectura/s</th>
-              <th className="text-right py-1">Escritura/s</th>
-            </tr></thead>
-            <tbody>
-              {Object.entries(diskMap).map(([disk, io]) => (
-                <tr key={disk} className="border-b border-gray-700/40">
-                  <td className="py-1.5 pr-4 font-mono text-gray-300">{disk}</td>
-                  <td className="py-1.5 pr-4 text-right text-blue-400">{bytes(io.read)}</td>
-                  <td className="py-1.5 text-right text-purple-400">{bytes(io.write)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <p className="text-gray-400 text-xs mb-3 uppercase tracking-wide">Disk I/O</p>
+          {(() => {
+            const entries = Object.entries(diskMap);
+            const maxVal = Math.max(...entries.flatMap(([, io]) => [io.read, io.write]), 1);
+            return (
+              <div className="space-y-4">
+                {entries.map(([diskName, io]) => (
+                  <div key={diskName}>
+                    <p className="text-gray-400 font-mono text-xs mb-1.5">{diskName}</p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-gray-600 text-xs w-16 flex-shrink-0">Lectura</span>
+                      <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min(io.read / maxVal * 100, 100)}%` }} />
+                      </div>
+                      <span className="text-blue-400 text-xs w-20 text-right font-mono flex-shrink-0">{bytes(io.read)}/s</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600 text-xs w-16 flex-shrink-0">Escritura</span>
+                      <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-purple-500 transition-all" style={{ width: `${Math.min(io.write / maxVal * 100, 100)}%` }} />
+                      </div>
+                      <span className="text-purple-400 text-xs w-20 text-right font-mono flex-shrink-0">{bytes(io.write)}/s</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
